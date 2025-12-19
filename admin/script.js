@@ -944,18 +944,22 @@ function renderInboxAccounts(accounts) {
     accounts.forEach((acc) => {
         if (acc.status) { 
             const activeClass = (currentInboxAccountId == acc.id) ? 'active' : '';
+            const hasApi = acc.type.includes('API');
+            const hasGas = acc.type.includes('GAS');     
             html += `
             <div class="list-group-item list-group-item-action py-2 account-row ${activeClass}" onclick="selectAccount(${acc.id}, this)">
                 <div class="d-flex w-100 justify-content-between align-items-center">
                     <span class="fw-bold text-truncate">${acc.name}</span>
                     <div class="btn-group btn-group-sm">
-                        
-                        <input type="radio" class="btn-check" name="mode_${acc.id}" id="btn_api_${acc.id}" value="API" ${acc.type.includes('API')?'checked':''} onchange="updateFetchMode(${acc.id}, 'API')">
+                        <input type="radio" class="btn-check" name="mode_${acc.id}" id="btn_api_${acc.id}" value="API" 
+                               ${hasApi ? 'checked' : ''} ${!hasApi ? 'disabled' : ''} 
+                               onchange="updateFetchMode(${acc.id}, 'API')">
                         <label class="btn btn-outline-success py-0" for="btn_api_${acc.id}" style="font-size:0.7rem">API</label>
                         
-                        <input type="radio" class="btn-check" name="mode_${acc.id}" id="btn_gas_${acc.id}" value="GAS" ${!acc.type.includes('API')&&acc.type.includes('GAS')?'checked':''} onchange="updateFetchMode(${acc.id}, 'GAS')">
+                        <input type="radio" class="btn-check" name="mode_${acc.id}" id="btn_gas_${acc.id}" value="GAS" 
+                               ${!hasApi && hasGas ? 'checked' : ''} ${!hasGas ? 'disabled' : ''} 
+                               onchange="updateFetchMode(${acc.id}, 'GAS')">
                         <label class="btn btn-outline-primary py-0" for="btn_gas_${acc.id}" style="font-size:0.7rem">GAS</label>
-                        
                     </div>
                 </div>
             </div>`;
