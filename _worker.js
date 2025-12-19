@@ -361,44 +361,129 @@ async function handleAccounts(req, env) {
     const method = req.method;
     const url = new URL(req.url);
     
-    // GET 逻辑保持基本一致
+    // GET: 获取列表或导出
     if (method === 'GET') {
-        const { results } = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts ORDER BY id DESC").all();
-        return jsonResp({ data: results });
+        const type = url.searchParams.get('type');
+        if (type === 'simple') { 
+            // 简单列表，用于下拉菜单
+            const { results } = await env.XYRJ_GMAIL.prepare("SELECT id, name, alias FROM accounts ORDER BY id DESC").all();
+            return jsonResp({ data: results }); 
+        }
+        if (type === 'export') {
+            // 导出全部
+            const { results } = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts ORDER BY id DESC").all();
+            return jsonResp({ data: results });
+        }
+        
+        // 分页列表
+        const page = parseInt(url.searchParams.get('page')) || 1;
+        const limit = parseInt(url.searchParams.get('limit')) || 50;
+        const q = url.searchParams.get('q');
+        const offset = (page - 1) * limit;
+
+        let whereClause = "WHERE status >= 0"; 
+        const params = [];
+        if (q) {
+            whereClause += " AND (name LIKE ? OR alias LIKE ? OR email LIKE ?)";
+            params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+        }
+        
+        const countStmt = await env.XYRJ_GMAIL.prepare(`SELECT COUNT(*) as total FROM accounts ${whereClause}`).bind(...params).first();
+        const total = countStmt.total;
+        
+        const { results } = await env.XYRJ_GMAIL.prepare(`SELECT * FROM accounts ${whereClause} ORDER BY id DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
+        
+        return jsonResp({
+            data: results,
+            total: total,
+            page: page,
+            total_pages: Math.ceil(total / limit)
+        });
     }
     
-    // POST / PUT 需要处理 email 字段
+    // POST: 批量或单条添加
     if (method === 'POST') {
         const d = await req.json();
-        // 简化处理，假设一次传一个或数组
         const items = Array.isArray(d) ? d : [d];
+        
         for (const item of items) {
              const storedUrl = (item.type === 'API') ? '' : (item.gas_url || item.script_url || '');
-             // [新增] email
+             
+             // [修复核心] 解析 api_config 字符串为独立字段
+             let cid = item.client_id, csec = item.client_secret, rtok = item.refresh_token;
+             if (item.api_config) {
+                 const parts = item.api_config.split(',');
+                 cid = parts[0] ? parts[0].trim() : null;
+                 csec = parts[1] ? parts[1].trim() : null;
+                 rtok = parts[2] ? parts[2].trim() : null;
+             }
+             
+             // [修复核心] 使用 || null 确保不会传入 undefined 导致 500 错误
              await env.XYRJ_GMAIL.prepare(
                 "INSERT INTO accounts (name, email, alias, type, script_url, client_id, client_secret, refresh_token, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
-             ).bind(item.name, item.email||'', item.alias, item.type, storedUrl, item.client_id, item.client_secret, item.refresh_token).run();
+             ).bind(
+                 item.name || 'Unknown', 
+                 item.email || '', 
+                 item.alias || '', 
+                 item.type || 'API', 
+                 storedUrl || '', 
+                 cid || null, 
+                 csec || null, 
+                 rtok || null
+             ).run();
         }
         return jsonResp({ ok: true });
     }
 
+    // PUT: 更新账号
     if (method === 'PUT') {
         const d = await req.json();
+        // 仅更新状态
         if (d.status !== undefined && !d.name) {
             await env.XYRJ_GMAIL.prepare("UPDATE accounts SET status=? WHERE id=?").bind(d.status, d.id).run();
             return jsonResp({ ok: true });
         }
+        
         const storedUrl = (d.type === 'API') ? '' : (d.gas_url || d.script_url || '');
-        // [新增] email
+        
+        // [修复核心] 解析 api_config
+        let cid = d.client_id, csec = d.client_secret, rtok = d.refresh_token;
+        if (d.api_config) {
+            const parts = d.api_config.split(',');
+            cid = parts[0] ? parts[0].trim() : null;
+            csec = parts[1] ? parts[1].trim() : null;
+            rtok = parts[2] ? parts[2].trim() : null;
+        }
+
         await env.XYRJ_GMAIL.prepare(
             "UPDATE accounts SET name=?, email=?, alias=?, type=?, script_url=?, client_id=?, client_secret=?, refresh_token=? WHERE id=?"
-        ).bind(d.name, d.email||'', d.alias, d.type, storedUrl, d.client_id, d.client_secret, d.refresh_token, d.id).run();
+        ).bind(
+            d.name, 
+            d.email || '', 
+            d.alias || '', 
+            d.type, 
+            storedUrl || '', 
+            cid || null, 
+            csec || null, 
+            rtok || null, 
+            d.id
+        ).run();
         return jsonResp({ ok: true });
     }
 
+    // DELETE: 删除账号 (支持单删和批量删)
     if (method === 'DELETE') {
         const id = url.searchParams.get('id');
-        await env.XYRJ_GMAIL.prepare("DELETE FROM accounts WHERE id=?").bind(id).run();
+        const ids = url.searchParams.get('ids'); // 支持 ?ids=1,2,3
+        
+        if (ids) {
+             const idList = ids.split(',');
+             for (const delId of idList) {
+                 await env.XYRJ_GMAIL.prepare("DELETE FROM accounts WHERE id=?").bind(delId).run();
+             }
+        } else if (id) {
+             await env.XYRJ_GMAIL.prepare("DELETE FROM accounts WHERE id=?").bind(id).run();
+        }
         return jsonResp({ ok: true });
     }
 }
