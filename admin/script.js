@@ -592,7 +592,9 @@ function filterRules(text) {
 function generateRandomRuleCode() {
     $("#rule-code").val(generateRandomString(10));
 }
-
+function openAddRuleModal() {
+    openEditRuleModal();
+}
 function openEditRuleModal(id) {
     // 填充策略组下拉
     let opts = '<option value="">-- 不绑定 (使用本地条件) --</option>';
