@@ -1003,27 +1003,53 @@ function submitBatchAccountImport() {
 function processImportContent(content) {
     try {
         const lines = content.split('\n').filter(l => l.trim());
-        const json = lines.map(l => {
-            const p = l.split('\t').map(s => s.trim());
-            // 兼容旧版(4列)和新版(5列,含邮箱)
-            let name, email, alias, api, gas;
-            if (p[1] && p[1].includes('@')) { [name, email, alias, api, gas] = p; } 
-            else { [name, alias, api, gas] = p; email = ""; }
+        const json = lines.map(line => {
+            // 1. 严格按 Tab 分割，不进行智能猜测
+            // 注意：如果中间有空的，split 会得到空字符串，这是符合预期的
+            const parts = line.split('\t').map(s => s.trim());
             
-            const type = (api && gas) ? 'API/GAS' : (api ? 'API' : (gas ? 'GAS' : 'API'));
-            return { name, email: email||"", alias: alias||"", api_config: api||"", gas_url: gas||"", type };
-        });
-        if (!json.length) throw new Error("内容为空");
+            // 2. 严格对应 5 个列位置
+            // 顺序: [0]名称  [1]邮箱  [2]别名  [3]API配置  [4]GAS链接
+            const name = parts[0] || "";
+            const email = parts[1] || "";
+            const alias = parts[2] || "";
+            const api = parts[3] || "";
+            const gas = parts[4] || "";
+
+            // 3. 自动判断账号类型
+            let type = 'API'; // 默认
+            if (api && gas) type = 'API/GAS';
+            else if (gas) type = 'GAS';
+            
+            // 简单校验
+            if (!name) return null; // 忽略没有名字的行
+
+            return { 
+                name: name, 
+                email: email, 
+                alias: alias, 
+                api_config: api, 
+                gas_url: gas, 
+                type: type 
+            };
+        }).filter(item => item !== null); // 过滤掉无效行
+
+        if (!json.length) throw new Error("有效内容为空");
 
         fetch(API_BASE + '/api/accounts', { method: 'POST', headers: getHeaders(), body: JSON.stringify(json) })
             .then(r => r.json()).then(res => {
                 if (res.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('batchAccountImportModal')).hide();
                     alert(`导入成功: ${res.imported || json.length} 个`);
-                    loadAccounts(currentAccountPage); loadAllAccountNames();
-                } else alert("导入失败: " + res.error);
+                    loadAccounts(currentAccountPage); 
+                    loadAllAccountNames();
+                } else {
+                    alert("导入失败: " + res.error);
+                }
             });
-    } catch(err) { alert("解析错误: " + err.message); }
+    } catch(err) { 
+        alert("解析错误: " + err.message); 
+    }
 }
 
 function toggleAll(type) {
