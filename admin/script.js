@@ -124,7 +124,9 @@ function doLogin() {
             }
         }).catch(()=> showToast("连接失败"));
 }
-
+$("#admin-pass").keyup(function(e) {
+    if (e.key === "Enter" || e.keyCode === 13) doLogin();
+});
 function doLogout() {
     localStorage.removeItem("auth_token");
     location.reload();
