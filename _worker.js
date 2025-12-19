@@ -743,15 +743,40 @@ function stripHtml(html) {
     if (!html) return "";
     return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 }
-
-function calculateNextRun(base, config) {
-    // 简单实现随机延迟 (支持 "1-2" 天 或 "10" 天)
-    let days = 1;
-    if (config && config.includes('-')) {
-        const [min, max] = config.split('-').map(Number);
-        days = Math.floor(Math.random() * (max - min + 1)) + min;
-    } else {
-        days = parseInt(config) || 1;
+function getRandFromRange(str) {
+    if (!str) return 0;
+    if (String(str).includes('-')) {
+        const parts = str.split('-');
+        const min = parseInt(parts[0]) || 0;
+        const max = parseInt(parts[1]) || 0;
+        return Math.floor(Math.random() * (max - min + 1)) + min;
     }
-    return base + (days * 86400000);
+    return parseInt(str) || 0;
+}
+
+function calculateNextRun(baseTimeMs, configStr) {
+    if (!configStr) return baseTimeMs + 86400000; 
+
+    let addMs = 0;
+    if (configStr.includes('|')) {
+        const parts = configStr.split('|');
+        const d = getRandFromRange(parts[0]);
+        const h = getRandFromRange(parts[1]);
+        const m = getRandFromRange(parts[2]);
+        const s = getRandFromRange(parts[3]);
+        addMs += d * 24 * 60 * 60 * 1000 + h * 60 * 60 * 1000 + m * 60 * 1000 + s * 1000;
+    } 
+    else if (configStr.includes(',')) {
+        const parts = configStr.split(',');
+        const val = getRandFromRange(parts[0]);
+        const unit = parts[1];
+        let multiplier = 24 * 60 * 60 * 1000;
+        if (unit === 'minute') multiplier = 60 * 1000;
+        if (unit === 'hour') multiplier = 60 * 60 * 1000;
+        addMs = val * multiplier;
+    } else {
+        addMs = getRandFromRange(configStr) * 86400000;
+    }
+    if (addMs <= 0) addMs = 60000;
+    return baseTimeMs + addMs;
 }
