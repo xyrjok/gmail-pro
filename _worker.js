@@ -541,7 +541,8 @@ async function handleTasks(req, env) {
         let nextRun = d.base_date ? new Date(d.base_date).getTime() : calculateNextRun(Date.now(), d.delay_config);
         await env.XYRJ_GMAIL.prepare(`
             UPDATE send_tasks SET account_id=?, to_email=?, subject=?, content=?, base_date=?, delay_config=?, is_loop=?, execution_mode=?, next_run_at=? WHERE id=?
-        `).bind(d.account_id, d.to_email, d.subject, d.content, d.base_date, d.delay_config, d.is_loop, d.execution_mode, nextRun, d.id).run();
+        `).bind(d.account_id, d.to_email, d.subject, d.content, d.base_date, d.delay_config, d.is_loop ? 1 : 0, d.execution_mode, nextRun, d.id).run();
+
         return jsonResp({ ok: true });
     }
     
@@ -676,19 +677,20 @@ async function processScheduledTasks(env) {
         const acc = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts WHERE id=?").bind(task.account_id).first();
         if (acc) {
             const res = await executeSendEmail(env, acc, task.to_email, task.subject, task.content, task.execution_mode);
+            if (task.is_loop) {
+        // 如果是循环任务，更新下一次执行时间，状态保持为 pending
+            const nextRun = calculateNextRun(Date.now(), task.delay_config);
+            const countCol = res.success ? 'success_count' : 'fail_count';
+            await env.XYRJ_GMAIL.prepare(`UPDATE send_tasks SET next_run_at=?, status='pending', ${countCol}=${countCol}+1 WHERE id=?`).bind(nextRun, task.id).run();
+        } else {
+        // 如果不是循环任务，直接更新为最终状态（success 或 error）
             const status = res.success ? 'success' : 'error';
             const countCol = res.success ? 'success_count' : 'fail_count';
             await env.XYRJ_GMAIL.prepare(`UPDATE send_tasks SET status=?, ${countCol}=${countCol}+1 WHERE id=?`).bind(status, task.id).run();
-        }
-
-        // 循环逻辑
-        if (task.is_loop) {
-            const nextRun = calculateNextRun(Date.now(), task.delay_config);
-            await env.XYRJ_GMAIL.prepare("UPDATE send_tasks SET next_run_at=?, status='pending' WHERE id=?").bind(nextRun, task.id).run();
+            }
         }
     }
 }
-
 // OAuth 相关
 async function getAccountAuth(env, accountId) {
     return await env.XYRJ_GMAIL.prepare("SELECT client_id, client_secret, refresh_token FROM accounts WHERE id = ?").bind(accountId).first();
