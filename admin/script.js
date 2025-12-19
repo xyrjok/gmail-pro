@@ -1109,11 +1109,11 @@ function processImportContent(content) {
 function toggleAll(type) {
     $("." + type + "-check").prop("checked", $("#check-all-" + type).is(":checked"));
 }
-
-// 初始化
-if(localStorage.getItem("auth_token")) {
-    $("#login-overlay").hide();
+if (localStorage.getItem("auth_token")) {
+    $("#login-overlay").hide(); 
     loadAccounts();
     loadGroups();
     loadAllAccountNames();
+} else {
+    $("#login-overlay").show();
 }
