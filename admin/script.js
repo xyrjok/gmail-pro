@@ -963,16 +963,42 @@ function renderInboxAccounts(accounts) {
 
 function filterInboxAccounts() { clearTimeout(inboxSearchTimer); inboxSearchTimer = setTimeout(() => loadInboxAccounts(1), 300); }
 function changeInboxPage(d) { if (currentInboxPage+d > 0 && currentInboxPage+d <= currentInboxTotalPages) loadInboxAccounts(currentInboxPage+d); }
-
 function selectAccount(id, el) {
     currentInboxAccountId = id;
     currentFetchMode = $(`input[name="mode_${id}"]:checked`).val() || 'API';
+    
     $(".account-row").removeClass("active");
     $(el).addClass("active");
-    $("#email-content-view").html(`<div class="text-center mt-5 text-muted"><p>已选中: ${$(el).find('.fw-bold').text()}</p><p>点击上方按钮加载邮件</p></div>`);
-}
-function updateFetchMode(id, mode) { if(currentInboxAccountId==id) currentFetchMode=mode; }
+    
+    const badgeClass = currentFetchMode === 'API' ? 'bg-success' : 'bg-primary';
+    const accName = $(el).find('.fw-bold').text();
 
+    $("#email-content-view").html(`
+        <div class="text-center mt-5 text-muted">
+            <i class="fas fa-envelope-open-text fa-3x mb-3 text-secondary"></i>
+            <p>已选中邮箱: <b>${accName}</b></p>
+            <p class="my-2">
+                当前模式: <span class="badge ${badgeClass}" id="current-mode-display">${currentFetchMode}</span>
+            </p>
+            <div class="mt-4 p-3 bg-light d-inline-block rounded border">
+                <p class="mb-1 small"><i class="fas fa-mouse-pointer me-1"></i> 点击上方 <b>"1封" / "3封"</b> 按钮</p>
+                <p class="mb-0 small text-secondary">将自动同步并显示最新邮件</p>
+            </div>
+        </div>
+    `);
+}
+function updateFetchMode(id, mode) {
+    if (currentInboxAccountId == id) {
+        currentFetchMode = mode;
+        const badge = $("#current-mode-display");
+        if (badge.length) {
+            badge.text(mode);
+            badge.removeClass("bg-success bg-primary")
+                 .addClass(mode === 'API' ? 'bg-success' : 'bg-primary');
+        }
+        showToast(`已切换为 ${mode} 模式`);
+    }
+}
 function setLimit(n) { currentEmailLimit=n; syncAndLoad(); }
 function setCustomLimit(n) { currentEmailLimit=n; syncAndLoad(); }
 
