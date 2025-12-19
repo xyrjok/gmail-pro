@@ -435,12 +435,36 @@
     <div class="modal fade" id="batchAccountImportModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title">导入邮箱</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-                <div class="modal-body">
-                    <p class="small">格式: 名称 [TAB] 别名 [TAB] API [TAB] GAS</p>
-                    <textarea id="import-acc-json" class="form-control" rows="10"></textarea>
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入邮箱</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-footer"><button class="btn btn-primary" onclick="processImport($('#import-acc-json').val())">导入</button></div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="importTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-paste" type="button">粘贴文本</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-file" type="button">上传文件</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-paste">
+                            <p class="small text-muted mb-2">格式：<code>名称 [TAB] 邮箱 [TAB] 别名 [TAB] API [TAB] GAS</code></p>
+                            <textarea id="import-acc-json" class="form-control" rows="10" placeholder="例如: Office&#09;user@gm.com&#09;别名..."></textarea>
+                        </div>
+                        <div class="tab-pane fade" id="tab-file">
+                            <div class="mb-3">
+                                <label for="import-acc-file-input" class="form-label">选择 .txt 文件</label>
+                                <input class="form-control" type="file" id="import-acc-file-input" accept=".txt">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitBatchAccountImport()">开始导入</button>
+                </div>
             </div>
         </div>
     </div>
