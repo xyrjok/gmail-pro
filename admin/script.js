@@ -972,20 +972,52 @@ function fetchEmailsAfterSync() {
     });
 }
 
-// 批量导入逻辑 (Accounts)
-function openBatchAccountModal() { $("#import-acc-json").val(""); new bootstrap.Modal(document.getElementById('batchAccountImportModal')).show(); }
-function processImport(jsonStr) {
+// 批量导入逻辑 (Accounts) - 修复版
+function openBatchAccountModal() {
+    $("#import-acc-json").val(""); $("#import-acc-file-input").val("");
+    new bootstrap.Tab(document.querySelector('#importTabs button[data-bs-target="#tab-paste"]')).show();
+    new bootstrap.Modal(document.getElementById('batchAccountImportModal')).show();
+}
+
+function submitBatchAccountImport() {
+    const activeTab = $("#importTabs .active").attr("data-bs-target");
+    if (activeTab === "#tab-paste") {
+        const text = $("#import-acc-json").val();
+        if (!text.trim()) return showToast("请输入内容");
+        processImportContent(text);
+    } else {
+        const file = document.getElementById('import-acc-file-input').files[0];
+        if (!file) return showToast("请选择文件");
+        const reader = new FileReader();
+        reader.onload = e => processImportContent(e.target.result);
+        reader.readAsText(file);
+    }
+}
+
+function processImportContent(content) {
     try {
-        const lines = jsonStr.split('\n').filter(l=>l.trim());
+        const lines = content.split('\n').filter(l => l.trim());
         const json = lines.map(l => {
-            const p = l.split('\t').map(s=>s.trim());
-            const type = (p[2]&&p[3]) ? 'API/GAS' : (p[2]?'API':'GAS');
-            return { name: p[0], alias: p[1], api_config: p[2], gas_url: p[3], type };
+            const p = l.split('\t').map(s => s.trim());
+            // 兼容旧版(4列)和新版(5列,含邮箱)
+            let name, email, alias, api, gas;
+            if (p[1] && p[1].includes('@')) { [name, email, alias, api, gas] = p; } 
+            else { [name, alias, api, gas] = p; email = ""; }
+            
+            const type = (api && gas) ? 'API/GAS' : (api ? 'API' : (gas ? 'GAS' : 'API'));
+            return { name, email: email||"", alias: alias||"", api_config: api||"", gas_url: gas||"", type };
         });
-        fetch(API_BASE+'/api/accounts', {method:'POST',headers:getHeaders(),body:JSON.stringify(json)}).then(()=>{
-            bootstrap.Modal.getInstance(document.getElementById('batchAccountImportModal')).hide(); loadAccounts(); showToast("导入完成");
-        });
-    } catch(e){ alert("格式错误"); }
+        if (!json.length) throw new Error("内容为空");
+
+        fetch(API_BASE + '/api/accounts', { method: 'POST', headers: getHeaders(), body: JSON.stringify(json) })
+            .then(r => r.json()).then(res => {
+                if (res.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('batchAccountImportModal')).hide();
+                    alert(`导入成功: ${res.imported || json.length} 个`);
+                    loadAccounts(currentAccountPage); loadAllAccountNames();
+                } else alert("导入失败: " + res.error);
+            });
+    } catch(err) { alert("解析错误: " + err.message); }
 }
 
 function toggleAll(type) {
