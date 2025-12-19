@@ -187,16 +187,20 @@ function renderAccounts(data) {
             <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
         </div>`;
         
-        let apiDisplay = '-';
+        // 构造 API 显示文本
+        let apiText = '-';
+        let apiFull = '';
         if (acc.client_id) {
-            apiDisplay = `ID:${acc.client_id}...`;
-        } else if (acc.type.includes('API') && !acc.client_id) {
-            apiDisplay = `<span class="text-muted">无配置</span>`;
+            apiText = `ID:${acc.client_id}, Secret:${acc.client_secret}, Token:${acc.refresh_token}`;
+            apiFull = apiText;
+        } else if (acc.type.includes('API')) {
+            apiText = '无配置';
         }
         
-        let gasDisplay = '-';
+        // 构造 GAS 显示文本
+        let gasText = '-';
         if (acc.script_url && acc.script_url.startsWith('http')) {
-            gasDisplay = `YES`;
+            gasText = acc.script_url;
         }
 
         let badgeClass = 'bg-secondary';
@@ -204,14 +208,29 @@ function renderAccounts(data) {
         else if (acc.type === 'GAS') badgeClass = 'bg-primary';
         else if (acc.type === 'API/GAS') badgeClass = 'bg-info text-dark';
 
-        // [新增] 显示 Email 字段
         html += `<tr>
             <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
-            <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')">${acc.name}</td>
-            <td>${acc.email || '-'}</td>
-            <td class="cursor-pointer" onclick="copyText('${acc.alias}')">${acc.alias || '-'}</td>
-            <td class="cursor-pointer" title="点击复制详细配置" onclick="copyText('${acc.client_id},${acc.client_secret},${acc.refresh_token}')">${apiDisplay}</td>
-            <td class="cursor-pointer" title="${acc.script_url}" onclick="copyText('${acc.script_url}')">${gasDisplay}</td>
+            
+            <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')" style="white-space:nowrap;">
+                ${acc.name}
+            </td>
+            
+            <td>
+                <div class="text-truncate" style="max-width: 150px;" title="${acc.email || ''}">${acc.email || '-'}</div>
+            </td>
+            
+            <td class="cursor-pointer" onclick="copyText('${acc.alias}')">
+                <div class="text-truncate" style="max-width: 100px;" title="${acc.alias || ''}">${acc.alias || '-'}</div>
+            </td>
+            
+            <td class="cursor-pointer" onclick="copyText('${apiFull}')" title="${apiFull}">
+                <div class="text-truncate" style="max-width: 150px;">${apiText}</div>
+            </td>
+            
+            <td class="cursor-pointer" onclick="copyText('${gasText}')" title="${gasText}">
+                <div class="text-truncate" style="max-width: 150px;">${gasText}</div>
+            </td>
+            
             <td><span class="badge ${badgeClass}">${acc.type}</span></td>
             <td>${statusSwitch}</td>
             <td>
