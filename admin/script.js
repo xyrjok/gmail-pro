@@ -242,12 +242,16 @@ function loadAllAccountNames() {
     fetch(`${API_BASE}/api/accounts?type=simple`, { headers: getHeaders() })
         .then(r => r.json())
         .then(data => {
+            const list = data.data || data;   
             let optionsHtml = '';
             window.accountNameMap = {}; 
-            data.forEach(acc => {
-                optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
-                window.accountNameMap[acc.name] = acc.id;
-            });
+            
+            if (Array.isArray(list)) {
+                list.forEach(acc => {
+                    optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
+                    window.accountNameMap[acc.name] = acc.id;
+                });
+            }
             $("#account-list-options").html(optionsHtml);
         });
 }
@@ -259,8 +263,10 @@ function exportAccounts() {
     
     fetch(`${API_BASE}/api/accounts?type=export`, { headers: getHeaders() })
         .then(r => r.json())
-        .then(data => {
-            const lines = data.map(acc => {
+        .then(res => {
+            const list = res.data || res;
+            if (!Array.isArray(list)) throw new Error("数据格式错误");
+            const lines = list.map(acc => {
                 let apiConf = '';
                 if (acc.client_id) apiConf = `${acc.client_id},${acc.client_secret || ''},${acc.refresh_token || ''}`;
                 let gasUrl = '';
