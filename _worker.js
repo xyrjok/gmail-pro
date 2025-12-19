@@ -155,15 +155,19 @@ async function sendViaGAS(account, to, subject, content) {
     throw new Error(`GAS Error: ${text.substring(0, 100)}`);
 }
 
-/**
- * 统一抓取入口 (支持查询参数)
- */
-async function syncEmails(env, account, limit = 5, queryParams = null) {
-    // 自动判定模式
+/**统一抓取入口 (支持查询参数 + 强制模式) */
+async function syncEmails(env, account, limit = 5, queryParams = null, forceMode = null) {
+    // 1. 基础检查
     const hasApi = !!account.refresh_token;
     const hasGas = !!account.script_url;
-    // 优先 API，除非指定 GAS 或只有 GAS
-    const useApi = hasApi; 
+    let useApi = hasApi;
+    if (forceMode === 'GAS') {
+        if (!hasGas) throw new Error("该账号未配置 GAS URL，无法使用 GAS 模式");
+        useApi = false;
+    } else if (forceMode === 'API') {
+        if (!hasApi) throw new Error("该账号未配置 API 信息，无法使用 API 模式");
+        useApi = true;
+    }
 
     if (useApi) {
         return await fetchViaAPI(env, account, limit, queryParams);
@@ -174,9 +178,7 @@ async function syncEmails(env, account, limit = 5, queryParams = null) {
     }
 }
 
-/**
- * 模式 A: 通过 Gmail API 抓取 (并发优化版)
- */
+/**模式 A: 通过 Gmail API 抓取 (并发优化版) **/
 async function fetchViaAPI(env, account, limit, queryParams) {
     const authData = await getAccountAuth(env, account.id);
     const accessToken = await getAccessToken(authData);
@@ -564,12 +566,12 @@ async function handleEmails(req, env) {
     const url = new URL(req.url);
     const accountId = url.searchParams.get('account_id');
     const limit = parseInt(url.searchParams.get('limit')) || 20;
-
+    const mode = url.searchParams.get('mode'); // [新增] 读取前端传来的模式 (API/GAS)
     if (!accountId) return jsonResp([]);
     try {
         const acc = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts WHERE id=?").bind(accountId).first();
-        // 这里不传 queryParams，表示只抓取收件箱/垃圾箱的最新邮件
-        const emails = await syncEmails(env, acc, limit, null);
+        if (!acc) return jsonResp({ error: "Account not found" });
+        const emails = await syncEmails(env, acc, limit, null, mode);
         return jsonResp(emails);
     } catch(e) {
         return jsonResp({ error: e.message });
