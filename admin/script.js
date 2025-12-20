@@ -858,7 +858,9 @@ function saveTask() {
 
     const data = {
         account_id: accId,
-        to_email: $("#send-to").val(), subject: $("#send-subject").val(), content: $("#send-content").val(),
+        to_email: $("#send-to").val(), 
+        subject: $("#send-subject").val() || "Remind",
+        content: $("#send-content").val() || ("Reminder of current time: " + new Date().toUTCString();),
         base_date: utcDateStr, delay_config: `${d}|${h}|${m}|${s}`,
         is_loop: $("#loop-switch").is(":checked"),
         execution_mode: $("#pref-api").is(":checked") ? 'API' : ($("#pref-gas").is(":checked") ? 'GAS' : 'AUTO')
@@ -917,8 +919,11 @@ function sendNow() {
     const accId = getSelectedAccountId();
     if(!accId) { showToast("请填写发件邮箱"); return; }
     const data = {
-        account_id: accId, to_email: $("#send-to").val(), subject: $("#send-subject").val(), content: $("#send-content").val(),
-        immediate: true, execution_mode: 'AUTO'
+        account_id: accId,
+    	to_email: $("#send-to").val(), 
+    	subject: $("#send-subject").val() || "Remind",
+    	content: $("#send-content").val() || ("Reminder of current time: " + new Date().toUTCString();),
+    	immediate: true, execution_mode: 'AUTO'
     };
     fetch(API_BASE + '/api/tasks', { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) }).then(r=>r.json()).then(res=>{
         showToast(res.ok ? "发送成功" : "失败: "+res.error);
