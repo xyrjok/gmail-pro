@@ -297,8 +297,13 @@ async function handleGroups(req, env) {
     const url = new URL(req.url);
 
     if (method === 'GET') {
-        const { results } = await env.XYRJ_GMAIL.prepare("SELECT * FROM filter_groups ORDER BY id DESC").all();
-        return jsonResp({ data: results });
+        // [添加] 新的分页查询逻辑
+        const page = parseInt(url.searchParams.get('page')) || 1;
+        const limit = parseInt(url.searchParams.get('limit')) || 30;
+        const offset = (page - 1) * limit;
+        const { results } = await env.XYRJ_GMAIL.prepare("SELECT * FROM filter_groups ORDER BY id DESC LIMIT ? OFFSET ?").bind(limit, offset).all();
+        const total = (await env.XYRJ_GMAIL.prepare("SELECT COUNT(*) as c FROM filter_groups").first()).c;
+        return jsonResp({ data: results, total: total, page: page, total_pages: Math.ceil(total / limit) });
     }
     if (method === 'POST') {
         const d = await req.json();
@@ -329,8 +334,24 @@ async function handleRules(req, env) {
     const url = new URL(req.url);
 
     if (method === 'GET') {
-        const { results } = await env.XYRJ_GMAIL.prepare("SELECT * FROM access_rules ORDER BY id DESC").all();
-        return jsonResp(results);
+        // [添加] 分页 + 搜索逻辑
+        const page = parseInt(url.searchParams.get('page')) || 1;
+        const limit = parseInt(url.searchParams.get('limit')) || 30;
+        const q = url.searchParams.get('q');
+        const offset = (page - 1) * limit;
+        
+        let where = "WHERE 1=1";
+        const params = [];
+        if (q) {
+            where += " AND (name LIKE ? OR query_code LIKE ?)";
+            params.push(`%${q}%`, `%${q}%`);
+        }
+
+        const total = (await env.XYRJ_GMAIL.prepare(`SELECT COUNT(*) as c FROM access_rules ${where}`).bind(...params).first()).c;
+        const { results } = await env.XYRJ_GMAIL.prepare(`SELECT * FROM access_rules ${where} ORDER BY id DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
+        
+        // 保持返回结构一致
+        return jsonResp({ data: results, total: total, page: page, total_pages: Math.ceil(total / limit) });
     }
     if (method === 'POST') {
         const d = await req.json();
