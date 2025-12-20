@@ -588,39 +588,53 @@ function changeRulePage(d) {
 
 function renderRules(data) {
     let html = '';
-    const host = window.location.host; 
+    const host = window.location.origin; // 使用 origin 获取完整域名
 
     data.forEach(r => {
-        // [新增] 策略组逻辑
-        const groupName = r.group_id ? (cachedGroups.find(g => g.id == r.group_id)?.name || `ID:${r.group_id}`) : null;
-        const groupBadge = groupName ? `<span class="badge bg-primary cursor-pointer" title="使用策略组">${escapeHtml(groupName)}</span>` : '<span class="text-muted">-</span>';
-        
-        // 构造本地条件显示
-        let localCond = [];
-        if (!r.group_id) {
-            if(r.match_sender) localCond.push(`发:${r.match_sender}`);
-            if(r.match_receiver) localCond.push(`收:${r.match_receiver}`);
-            if(r.match_body) localCond.push(`文:${r.match_body}`);
-            if (localCond.length === 0) localCond.push('无限制');
+        // [修改] 移植 Outlook 的匹配条件显示逻辑 (合并策略组和本地条件)
+        let matchInfo = [];
+        if(r.group_id) {
+            const group = cachedGroups.find(g => g.id == r.group_id);
+            const groupName = group ? group.name : `(ID:${r.group_id})`;
+            matchInfo.push(`<span class="badge bg-primary text-white" title="策略组">组: ${escapeHtml(groupName)}</span>`);
         } else {
-            localCond.push('<small class="text-muted fst-italic">继承策略组</small>');
+            if(r.match_sender) matchInfo.push(`<span class="badge bg-light text-dark border" title="发件人">发: ${escapeHtml(r.match_sender)}</span>`);
+            if(r.match_receiver) matchInfo.push(`<span class="badge bg-light text-dark border" title="收件人">收: ${escapeHtml(r.match_receiver)}</span>`);
+            if(r.match_body) matchInfo.push(`<span class="badge bg-light text-dark border" title="正文关键字">文: ${escapeHtml(r.match_body)}</span>`);
         }
+        const matchHtml = matchInfo.length ? matchInfo.join('<br>') : '<span class="text-muted small">-</span>';
 
-        const fullLink = `//${host}/${r.query_code}`;
-        const daysLeft = r.valid_until ? Math.ceil((r.valid_until - Date.now()) / 86400000) : null;
-        const validStr = daysLeft ? (daysLeft > 0 ? `${daysLeft}天` : '<span class="text-danger">过期</span>') : '永久';
+        // 构造链接和有效期
+        const fullLink = `${host}/${r.query_code}`;
+        const fullLinkStr = `${r.alias}---${fullLink}`;
+        
+        let validStr = '<span class="text-success">永久</span>';
+        if (r.valid_until) {
+            if (r.valid_until < Date.now()) {
+                validStr = `<span class="text-danger">已过期</span>`;
+            } else {
+                const days = Math.ceil((r.valid_until - Date.now()) / 86400000);
+                // 简单格式化日期 YYYY/M/D
+                const d = new Date(r.valid_until);
+                const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+                validStr = `${days}天 (${dateStr})`;
+            }
+        }
 
         html += `<tr>
             <td><input type="checkbox" class="rule-check" value="${r.id}"></td>
-            <td class="fw-bold">${escapeHtml(r.name)}</td>
-            <td>${escapeHtml(r.alias)}</td>
+            <td class="text-primary cursor-pointer fw-bold" onclick="copyText('${escapeHtml(r.name)}')" title="点击复制">${escapeHtml(r.name)}</td>
+            <td class="text-primary cursor-pointer" onclick="copyText('${escapeHtml(r.alias)}')" title="点击复制">${escapeHtml(r.alias)}</td>
             <td>
-                <a href="${fullLink}" target="_blank" class="text-decoration-none font-monospace small" title="点击打开">${r.query_code}</a>
+                <div class="input-group input-group-sm" style="width:160px">
+                    <input class="form-control bg-white" style="padding:.25rem .39rem;" value="${r.query_code}" readonly>
+                    <button class="btn btn-outline-secondary" onclick="window.open('${fullLink}')" title="打开链接"><i class="fas fa-external-link-alt"></i></button>
+                    <button class="btn btn-outline-secondary" onclick="copyText('${fullLinkStr}')" title="复制: 别名---链接"><i class="fas fa-copy"></i></button>
+                </div>
             </td>
-            <td>${groupBadge}</td>
+            <td class="small">${matchHtml}</td>
             <td>${r.fetch_limit || 5}</td>
             <td>${validStr}</td>
-            <td class="small text-truncate" style="max-width:150px">${escapeHtml(localCond.join(' '))}</td>
             <td>
                 <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditRuleModal(${r.id})"><i class="fas fa-edit"></i></button> 
                 <button class="btn btn-sm btn-light text-danger py-0" onclick="delRule(${r.id})"><i class="fas fa-trash"></i></button>
@@ -628,7 +642,7 @@ function renderRules(data) {
         </tr>`;
     });
 
-    if(data.length === 0) html = '<tr><td colspan="9" class="text-center text-muted">暂无规则</td></tr>';
+    if(data.length === 0) html = '<tr><td colspan="8" class="text-center text-muted">暂无规则</td></tr>';
     $("#rule-list-body").html(html);
 }
 
@@ -779,7 +793,9 @@ function exportRules() {
                 if (r.valid_until && r.valid_until > Date.now()) {
                     days = Math.ceil((r.valid_until - Date.now()) / (24 * 60 * 60 * 1000));
                 }
-                return `${r.name}\t${r.alias}\t${r.query_code}\t${r.fetch_limit||5}\t${days}\t${r.match_sender||''}\t${r.match_receiver||''}\t${r.match_body||''}`;
+                // [修改] 增加导出策略组名称 (与 Outlook 一致)
+                const gName = (cachedGroups.find(g => g.id == r.group_id) || {}).name || '';
+                return `${r.name}\t${r.alias}\t${r.query_code}\t${r.fetch_limit||5}\t${days}\t${r.match_sender||''}\t${r.match_receiver||''}\t${r.match_body||''}\t${gName}`;
             });
             const txtContent = lines.join('\n');
             const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
@@ -805,14 +821,22 @@ function processRuleImport(content) {
             const p = line.split('\t').map(s => s.trim());
             let validUntil = null;
             if (p[4] && parseInt(p[4]) > 0) validUntil = Date.now() + parseInt(p[4]) * 86400000;
+            
+            // [修改] 解析策略组名称并查找 ID (与 Outlook 一致)
+            // p[8] 是策略组名称列
+            const gId = (cachedGroups.find(g => g.name === (p[8]||'')) || {}).id || null;
+
             return {
                 name: p[0], alias: p[1] || '', query_code: p[2] || '',
                 fetch_limit: p[3] || '5', valid_until: validUntil,
-                match_sender: p[5] || '', match_receiver: p[6] || '', match_body: p[7] || ''
+                match_sender: p[5] || '', match_receiver: p[6] || '', match_body: p[7] || '',
+                group_id: gId
             };
         });
         if (json.length === 0) throw new Error("内容为空");
 
+        // 逐条添加或者批量添加，这里保持原逻辑（注意：如果后端支持批量，可以直接传数组）
+        // 原 gmail-pro 是批量接口 /import，这里保持不变
         fetch(API_BASE + '/api/rules/import', { method: 'POST', headers: getHeaders(), body: JSON.stringify(json) })
             .then(r => r.json()).then(res => {
                 if (res.success) {
@@ -823,9 +847,9 @@ function processRuleImport(content) {
             });
     } catch(err) {
         alert("格式错误");
+        console.error(err);
     }
 }
-
 // ================== 4. 发件任务管理 (Tasks) ==================
 
 function loadTasks(page = 1) {
