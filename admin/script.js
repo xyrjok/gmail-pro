@@ -54,6 +54,8 @@ let currentRuleTotalPages = 1;
 
 // 5. [新增] 策略组
 let cachedGroups = [];
+let currentGroupPage = 1;
+let currentGroupTotalPages = 1;
 
 // 鼠标位置 (Toast)
 let lastMouseX = 0, lastMouseY = 0;
@@ -451,17 +453,26 @@ function delAccount(id) {
 
 function loadGroups(page = 1) {
     $("#group-list-body").html('<tr><td colspan="6" class="text-center"><div class="spinner-border text-primary spinner-border-sm"></div> 加载中...</td></tr>');
+    currentGroupPage = page;
+
     fetch(`${API_BASE}/api/groups?page=${page}&limit=${globalPageSize}`, { headers: getHeaders() })
         .then(r => r.json())
         .then(res => {
             cachedGroups = res.data || [];
+            currentGroupTotalPages = res.total_pages || 1;
             renderGroups(cachedGroups);
             if($("#group-page-info").length) {
                 $("#group-page-info").html(`第 ${res.page} / ${res.total_pages} 页` + renderPageSizeSelect(globalPageSize));
+                $("#btn-prev-group").prop("disabled", res.page <= 1);
+                $("#btn-next-group").prop("disabled", res.page >= res.total_pages);
             }
         });
 }
-
+function changeGroupPage(d) {
+    if (currentGroupPage + d > 0 && currentGroupPage + d <= currentGroupTotalPages) {
+        loadGroups(currentGroupPage + d);
+    }
+}
 function renderGroups(list) {
     let html = '';
     list.forEach(g => {
