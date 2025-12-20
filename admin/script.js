@@ -793,7 +793,6 @@ function exportRules() {
                 if (r.valid_until && r.valid_until > Date.now()) {
                     days = Math.ceil((r.valid_until - Date.now()) / (24 * 60 * 60 * 1000));
                 }
-                // [修改] 增加导出策略组名称 (与 Outlook 一致)
                 const gName = (cachedGroups.find(g => g.id == r.group_id) || {}).name || '';
                 return `${r.name}\t${r.alias}\t${r.query_code}\t${r.fetch_limit||5}\t${days}\t${r.match_sender||''}\t${r.match_receiver||''}\t${r.match_body||''}\t${gName}`;
             });
@@ -809,8 +808,24 @@ function exportRules() {
         .catch(() => showToast("导出失败"));
 }
 
+function submitBatchRuleImport() {
+    const activeTab = $("#ruleImportTabs .active").attr("data-bs-target");
+    if(activeTab === "#tab-rule-paste") {
+        processRuleImport($("#import-rule-text").val());
+    } else {
+        const file = document.getElementById('import-rule-file-input').files[0];
+        if(!file) return alert("请选择文件");
+        const reader = new FileReader();
+        reader.onload = e => processRuleImport(e.target.result);
+        reader.readAsText(file);
+    }
+}
+
 function openBatchRuleModal() {
     $("#import-rule-text").val("");
+    $("#import-rule-file-input").val("");
+    const tabEl = document.querySelector('#ruleImportTabs button[data-bs-target="#tab-rule-paste"]');
+    if(tabEl) new bootstrap.Tab(tabEl).show();
     new bootstrap.Modal(document.getElementById('batchRuleImportModal')).show();
 }
 
@@ -821,16 +836,13 @@ function processRuleImport(content) {
             const p = line.split('\t').map(s => s.trim());
             let validUntil = null;
             if (p[4] && parseInt(p[4]) > 0) validUntil = Date.now() + parseInt(p[4]) * 86400000;
-            
-            // [修改] 解析策略组名称并查找 ID (与 Outlook 一致)
-            // p[8] 是策略组名称列
-            const gId = (cachedGroups.find(g => g.name === (p[8]||'')) || {}).id || null;
-
+            const gName = p[8] || '';
+            const gId = (cachedGroups.find(g => g.name === gName) || {}).id || null;
             return {
                 name: p[0], alias: p[1] || '', query_code: p[2] || '',
                 fetch_limit: p[3] || '5', valid_until: validUntil,
                 match_sender: p[5] || '', match_receiver: p[6] || '', match_body: p[7] || '',
-                group_id: gId
+                group_id: gId // [在此处添加] 存入 group_id
             };
         });
         if (json.length === 0) throw new Error("内容为空");
