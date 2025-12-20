@@ -587,7 +587,7 @@ async function handleTasks(req, env) {
         `).bind(...params, limit, offset).all();
 
         return jsonResp({ 
-            data: results,          // 当前页数据列表
+            data: results, 
             total: total,           // 总条数
             page: page,             // 当前页码
             total_pages: Math.ceil(total / limit) || 1 // 总页数
