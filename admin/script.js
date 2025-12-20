@@ -49,6 +49,8 @@ let currentFetchMode = 'API';
 // 4. 收件规则
 let cachedRules = [];
 let ruleSearchTimer = null;
+let currentRulePage = 1;
+let currentRuleTotalPages = 1;
 
 // 5. [新增] 策略组
 let cachedGroups = [];
@@ -542,27 +544,35 @@ function delGroup(id) {
 
 // ================== 3. 收件规则管理 (Rules) ==================
 
-function loadRules() {
+function loadRules(page = 1) {
     const searchQuery = $("#section-rules input[placeholder*='搜索']").val().trim();
+    currentRulePage = page; // [补全] 更新当前页码变量
+
     $("#rule-list-body").html('<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> 加载中...</td></tr>');
 
+    // 现在 page 变量有值了，不会报错
     fetch(`${API_BASE}/api/rules?page=${page}&limit=${globalPageSize}&q=${encodeURIComponent(searchQuery)}`, { headers: getHeaders() })
         .then(r => r.json())
         .then(res => {
-            // [修改] 适配新的返回结构 {data, total, ...}
             const list = res.data || (Array.isArray(res) ? res : []); 
             cachedRules = list;
+            currentRuleTotalPages = res.total_pages || 1; // [补全] 更新总页数
             renderRules(list);
             
-            // [修改] 更新分页信息和选择器
             if(res.total_pages) {
+                // [注意] 这里的 HTML 按钮 ID (btn-prev-rule) 需要你在 index.html 对应位置添加
                 $("#rule-page-info").html(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)` + renderPageSizeSelect(globalPageSize));
-                // 需在 filterRules 中调用 loadRules(1) 而不是前端过滤
-                // 需在 HTML 添加 #btn-prev-rule / #btn-next-rule 并绑定 onclick="changeRulePage(-1/+1)"
+                $("#btn-prev-rule").prop("disabled", res.page <= 1);
+                $("#btn-next-rule").prop("disabled", res.page >= res.total_pages);
             } else {
                 $("#rule-page-info").text(`共 ${list.length} 条规则`);
             }
         });
+}
+function changeRulePage(d) {
+    if (currentRulePage + d > 0 && currentRulePage + d <= currentRuleTotalPages) {
+        loadRules(currentRulePage + d);
+    }
 }
 
 function renderRules(data) {
@@ -886,7 +896,7 @@ function saveTask() {
         account_id: accId,
         to_email: $("#send-to").val(), 
         subject: $("#send-subject").val() || "Remind",
-        content: $("#send-content").val() || ("Reminder of current time: " + new Date().toUTCString();),
+        content: $("#send-content").val() || ("Reminder of current time: " + new Date().toUTCString()),
         base_date: utcDateStr, delay_config: `${d}|${h}|${m}|${s}`,
         is_loop: $("#loop-switch").is(":checked"),
         execution_mode: $("#pref-api").is(":checked") ? 'API' : ($("#pref-gas").is(":checked") ? 'GAS' : 'AUTO')
