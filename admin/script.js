@@ -785,10 +785,12 @@ function batchDelRules() {
 }
 
 function exportRules() {
-    fetch(`${API_BASE}/api/rules`, { headers: getHeaders() })
+    fetch(`${API_BASE}/api/rules?limit=10000`, { headers: getHeaders() })
         .then(r => r.json())
-        .then(data => {
-            const lines = data.map(r => {
+        .then(res => { 
+            const list = res.data || (Array.isArray(res) ? res : []);
+
+            const lines = list.map(r => {
                 let days = '';
                 if (r.valid_until && r.valid_until > Date.now()) {
                     days = Math.ceil((r.valid_until - Date.now()) / (24 * 60 * 60 * 1000));
@@ -796,6 +798,7 @@ function exportRules() {
                 const gName = (cachedGroups.find(g => g.id == r.group_id) || {}).name || '';
                 return `${r.name}\t${r.alias}\t${r.query_code}\t${r.fetch_limit||5}\t${days}\t${r.match_sender||''}\t${r.match_receiver||''}\t${r.match_body||''}\t${gName}`;
             });
+            
             const txtContent = lines.join('\n');
             const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
             const downloadAnchorNode = document.createElement('a');
@@ -805,9 +808,11 @@ function exportRules() {
             downloadAnchorNode.click();
             downloadAnchorNode.remove();
         })
-        .catch(() => showToast("导出失败"));
+        .catch((e) => {
+            console.error(e); // 建议打印错误以便调试
+            showToast("导出失败");
+        });
 }
-
 function submitBatchRuleImport() {
     const activeTab = $("#ruleImportTabs .active").attr("data-bs-target");
     if(activeTab === "#tab-rule-paste") {
