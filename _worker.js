@@ -553,12 +553,45 @@ async function handleTasks(req, env) {
         return jsonResp({ ok: true });
     }
     if (method === 'GET') {
+        // 1. 获取分页参数 (默认第1页，每页50条)
+        const page = parseInt(url.searchParams.get('page')) || 1;
+        const limit = parseInt(url.searchParams.get('limit')) || 50;
+        const offset = (page - 1) * limit;
+        
+        // 2. 获取搜索关键词
+        const q = url.searchParams.get('q');
+        
+        // 3. 构建动态查询条件
+        let whereClause = "WHERE 1=1";
+        const params = [];
+        if (q) {
+            // 支持搜索主题(Subject)或收件人(To Email)
+            whereClause += " AND (t.subject LIKE ? OR t.to_email LIKE ?)";
+            params.push(`%${q}%`, `%${q}%`);
+        }
+
+        // 4. 先查询总条数 (用于前端计算页码)
+        const countStmt = await env.XYRJ_GMAIL.prepare(
+            `SELECT COUNT(*) as total FROM send_tasks t ${whereClause}`
+        ).bind(...params).first();
+        const total = countStmt.total || 0;
+
+        // 5. 查询当前页的数据 (带关联账号名称)
         const { results } = await env.XYRJ_GMAIL.prepare(`
-            SELECT t.*, a.name as account_name FROM send_tasks t 
+            SELECT t.*, a.name as account_name 
+            FROM send_tasks t 
             LEFT JOIN accounts a ON t.account_id = a.id 
-            ORDER BY t.next_run_at ASC
-        `).all();
-        return jsonResp({ data: results });
+            ${whereClause} 
+            ORDER BY t.next_run_at ASC 
+            LIMIT ? OFFSET ?
+        `).bind(...params, limit, offset).all();
+
+        return jsonResp({ 
+            data: results,          // 当前页数据列表
+            total: total,           // 总条数
+            page: page,             // 当前页码
+            total_pages: Math.ceil(total / limit) || 1 // 总页数
+        });
     }
 }
 
