@@ -103,6 +103,13 @@
                             </thead>
                             <tbody id="group-list-body"></tbody>
                         </table>
+                        <div class="card-footer bg-white d-flex justify-content-between align-items-center border-top-0 pt-3">
+                            <small class="text-muted" id="group-page-info">共 0 条</small>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary" id="btn-prev-group" onclick="changeGroupPage(-1)" disabled>上一页</button>
+                                <button class="btn btn-sm btn-outline-secondary ms-1" id="btn-next-group" onclick="changeGroupPage(1)" disabled>下一页</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -147,6 +154,10 @@
                         
                         <div class="card-footer bg-white d-flex justify-content-between align-items-center border-top-0 pt-3">
                             <small class="text-muted" id="rule-page-info">共 0 条</small>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary" id="btn-prev-rule" onclick="changeRulePage(-1)" disabled>上一页</button>
+                                <button class="btn btn-sm btn-outline-secondary ms-1" id="btn-next-rule" onclick="changeRulePage(1)" disabled>下一页</button>
+                            </div>
                         </div>
                     </div>
                 </div>
