@@ -540,7 +540,9 @@ async function handleTasks(req, env) {
         // 普通更新
         let nextRun = d.base_date ? new Date(d.base_date).getTime() : calculateNextRun(Date.now(), d.delay_config);
         await env.XYRJ_GMAIL.prepare(`
-            UPDATE send_tasks SET account_id=?, to_email=?, subject=?, content=?, base_date=?, delay_config=?, is_loop=?, execution_mode=?, next_run_at=? WHERE id=?
+        UPDATE send_tasks 
+        SET account_id=?, to_email=?, subject=?, content=?, base_date=?, delay_config=?, is_loop=?, execution_mode=?, next_run_at=?, status='pending' 
+        WHERE id=?
         `).bind(d.account_id, d.to_email, d.subject, d.content, d.base_date, d.delay_config, d.is_loop ? 1 : 0, d.execution_mode, nextRun, d.id).run();
 
         return jsonResp({ ok: true });
