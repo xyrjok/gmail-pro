@@ -1,6 +1,30 @@
 const API_BASE = "";
 
 // ================== 全局变量定义 ==================
+// [添加] 全局分页大小
+let globalPageSize = 30;
+const pageSizeOptions = [10, 20, 30, 50, 100, 200, 500];
+
+// [添加] 渲染分页选择器 HTML 的辅助函数
+function renderPageSizeSelect(currentSize) {
+    const opts = pageSizeOptions.map(s => `<option value="${s}" ${s == currentSize ? 'selected' : ''}>${s}条/页</option>`).join('');
+    return `<select class="form-select form-select-sm d-inline-block w-auto ms-2" onchange="changeGlobalPageSize(this.value)">${opts}</select>`;
+}
+
+// [添加] 切换分页大小的处理函数
+function changeGlobalPageSize(size) {
+    globalPageSize = parseInt(size);
+    // 根据当前激活的 Tab 刷新数据
+    if ($("#section-accounts").hasClass("active")) loadAccounts(1);
+    else if ($("#section-tasks").hasClass("active")) loadTasks(1);
+    else if ($("#section-rules").hasClass("active")) loadRules(1); // Rules 现在支持分页了
+    else if ($("#section-groups").hasClass("active")) loadGroups(1); // Groups 现在支持分页了
+    else if ($("#section-receive").hasClass("active")) { 
+        // 收件箱特殊处理，可能需要更新 limit
+        if(currentInboxAccountId) { setLimit(globalPageSize); }
+        else loadInboxAccounts(1);
+    }
+}
 
 // 1. 邮箱管理
 let cachedAccounts = []; 
@@ -168,14 +192,14 @@ function loadAccounts(page = 1) {
     
     $("#account-list-body").html('<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> 加载中...</td></tr>');
 
-    return fetch(`${API_BASE}/api/accounts?page=${page}&limit=50&q=${encodeURIComponent(searchQuery)}`, { headers: getHeaders() })
+    return fetch(`${API_BASE}/api/accounts?page=${page}&limit=${globalPageSize}&q=${encodeURIComponent(searchQuery)}`, { headers: getHeaders() })
         .then(r => r.json())
         .then(res => {
             const list = res.data || [];
             cachedAccounts = list; 
             currentAccountTotalPages = res.total_pages || 1;
             renderAccounts(list);
-            $("#acc-page-info").text(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)`);
+            $("#acc-page-info").html(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)` + renderPageSizeSelect(globalPageSize));
             $("#btn-prev-acc").prop("disabled", res.page <= 1);
             $("#btn-next-acc").prop("disabled", res.page >= res.total_pages);
         });
@@ -423,13 +447,16 @@ function delAccount(id) {
 
 // ================== 2. [新增] 策略组管理 ==================
 
-function loadGroups() {
+function loadGroups(page = 1) {
     $("#group-list-body").html('<tr><td colspan="6" class="text-center"><div class="spinner-border text-primary spinner-border-sm"></div> 加载中...</td></tr>');
-    fetch(API_BASE + '/api/groups', { headers: getHeaders() })
+    fetch(`${API_BASE}/api/groups?page=${page}&limit=${globalPageSize}`, { headers: getHeaders() })
         .then(r => r.json())
         .then(res => {
             cachedGroups = res.data || [];
             renderGroups(cachedGroups);
+            if($("#group-page-info").length) {
+                $("#group-page-info").html(`第 ${res.page} / ${res.total_pages} 页` + renderPageSizeSelect(globalPageSize));
+            }
         });
 }
 
@@ -519,22 +546,22 @@ function loadRules() {
     const searchQuery = $("#section-rules input[placeholder*='搜索']").val().trim();
     $("#rule-list-body").html('<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> 加载中...</td></tr>');
 
-    fetch(`${API_BASE}/api/rules`, { headers: getHeaders() })
+    fetch(`${API_BASE}/api/rules?page=${page}&limit=${globalPageSize}&q=${encodeURIComponent(searchQuery)}`, { headers: getHeaders() })
         .then(r => r.json())
-        .then(data => {
-            // 前端过滤
-            let filtered = data;
-            if (searchQuery) {
-                const lowerQ = searchQuery.toLowerCase();
-                filtered = data.filter(r => 
-                    r.name.toLowerCase().includes(lowerQ) || 
-                    (r.alias && r.alias.toLowerCase().includes(lowerQ)) ||
-                    r.query_code.toLowerCase().includes(lowerQ)
-                );
+        .then(res => {
+            // [修改] 适配新的返回结构 {data, total, ...}
+            const list = res.data || (Array.isArray(res) ? res : []); 
+            cachedRules = list;
+            renderRules(list);
+            
+            // [修改] 更新分页信息和选择器
+            if(res.total_pages) {
+                $("#rule-page-info").html(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)` + renderPageSizeSelect(globalPageSize));
+                // 需在 filterRules 中调用 loadRules(1) 而不是前端过滤
+                // 需在 HTML 添加 #btn-prev-rule / #btn-next-rule 并绑定 onclick="changeRulePage(-1/+1)"
+            } else {
+                $("#rule-page-info").text(`共 ${list.length} 条规则`);
             }
-            cachedRules = filtered;
-            renderRules(filtered);
-            $("#rule-page-info").text(`共 ${filtered.length} 条规则`);
         });
 }
 
@@ -784,14 +811,13 @@ function loadTasks(page = 1) {
     const searchQuery = $("#section-send input[placeholder*='搜主题']").val().trim();
     currentTaskPage = page;
     $("#task-list-body").html('<tr><td colspan="7" class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 加载中...</td></tr>');
-
-    fetch(`${API_BASE}/api/tasks?page=${page}&limit=50&q=${encodeURIComponent(searchQuery)}&_t=${Date.now()}`, { headers: getHeaders() })
+    fetch(`${API_BASE}/api/tasks?page=${page}&limit=${globalPageSize}&q=${encodeURIComponent(searchQuery)}&_t=${Date.now()}`, { headers: getHeaders() })
         .then(r => r.json())
         .then(res => {
             cachedTasks = res.data || [];
             currentTaskTotalPages = res.total_pages || 1;
             renderTaskList(cachedTasks);
-            $("#task-page-info").text(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)`);
+            $("#task-page-info").html(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)` + renderPageSizeSelect(globalPageSize));
             $("#btn-prev-task").prop("disabled", res.page <= 1);
             $("#btn-next-task").prop("disabled", res.page >= res.total_pages);
         });
@@ -936,11 +962,11 @@ function loadInboxAccounts(page = 1) {
     const q = $("#section-receive input[placeholder*='搜索']").val().trim();
     currentInboxPage = page;
     $("#inbox-account-list").html('加载中...');
-    fetch(`${API_BASE}/api/accounts?page=${page}&limit=20&q=${encodeURIComponent(q)}`, { headers: getHeaders() })
+    fetch(`${API_BASE}/api/accounts?page=${page}&limit=${globalPageSize}&q=${encodeURIComponent(q)}`, { headers: getHeaders() })
         .then(r => r.json()).then(res => {
             currentInboxTotalPages = res.total_pages;
             renderInboxAccounts(res.data || []);
-            $("#inbox-page-info").text(`${res.page}/${res.total_pages}`);
+            $("#inbox-page-info").html(`${res.page}/${res.total_pages}` + renderPageSizeSelect(globalPageSize));
             $("#btn-prev-inbox").prop("disabled", res.page <= 1);
             $("#btn-next-inbox").prop("disabled", res.page >= res.total_pages);
         });
