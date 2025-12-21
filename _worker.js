@@ -572,7 +572,13 @@ async function handleTasks(req, env) {
     // GET & DELETE 保持简单
     if (method === 'DELETE') {
         const id = url.searchParams.get('id');
-        if (id) await env.XYRJ_GMAIL.prepare("DELETE FROM send_tasks WHERE id=?").bind(id).run();
+        const ids = url.searchParams.get('ids');
+        if (ids) {
+            const batch = ids.split(',').map(i => env.XYRJ_GMAIL.prepare("DELETE FROM send_tasks WHERE id=?").bind(i));
+            await env.XYRJ_GMAIL.batch(batch);
+        } else if (id) {
+            await env.XYRJ_GMAIL.prepare("DELETE FROM send_tasks WHERE id=?").bind(id).run();
+        }
         return jsonResp({ ok: true });
     }
     if (method === 'GET') {
