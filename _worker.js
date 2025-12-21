@@ -645,7 +645,7 @@ async function handleEmails(req, env) {
 // 公开查询接口 (HTML 渲染 + 策略组逻辑)
 // ============================================================
 // ============================================================
-// 公开查询接口 (HTML 渲染 + 策略组逻辑) - 已修改为 Outlook 样式
+// 公开查询接口 (HTML 渲染 + 策略组逻辑) 
 // ============================================================
 
 async function handlePublicQuery(code, env, url) {
@@ -686,8 +686,8 @@ async function handlePublicQuery(code, env, url) {
         acc = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts WHERE email LIKE ? AND status=1").bind(`%${rule.name}%`).first();
     }
     
-    // [Outlook 提示语] 账号未找到
-    if (!acc) return new Response(renderPage('<div class="msg">未找到对应的账号配置 (Account Not Found)</div>'), {status: 404, headers: {"Content-Type": "text/html;charset=UTF-8"}});
+    // [Outlook 提示语 #未找到对应的账号配置(Account Not Found)] 账号未找到
+    if (!acc) return new Response(renderPage('<div class="msg">号码错误！</div>'), {status: 404, headers: {"Content-Type": "text/html;charset=UTF-8"}});
 
     // 解析数量限制
     let fetchNum = 20, showNum = 5;
