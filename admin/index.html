@@ -220,13 +220,14 @@
                             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                                 <span>任务队列</span>
                                 <div class="input-group input-group-sm mx-2" style="width: 250px;">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" class="form-control" placeholder="搜主题/收件人..." onkeyup="filterTasks(this.value)">
                                 </div>
                                 <div>
                                     <button class="btn btn-sm btn-outline-secondary me-1" onclick="loadTasks(currentTaskPage)"><i class="fas fa-sync-alt"></i> 刷新</button>
-                                    <button class="btn btn-sm btn-outline-primary me-1" onclick="openBatchTaskModal()"><i class="fas fa-file-upload"></i> 批量添加</button>
-                                    <button class="btn btn-sm btn-outline-danger" onclick="batchDelTasks()"><i class="fas fa-trash"></i> 批量删除</button>
+                                    <button class="btn btn-sm btn-outline-success me-1" onclick="openBatchTaskModal()"><i class="fas fa-file-import"></i> 批量导入</button>
+                                    <button class="btn btn-sm btn-outline-info me-1" onclick="exportTasks()"><i class="fas fa-file-export"></i> 批量导出</button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="batchDelTasks()"><i class="fas fa-trash"></i> 清空</button>
                                 </div>
                             </div>
                             <div class="card-body p-0" style="overflow-x: auto;">
@@ -438,7 +439,38 @@
         </div>
     </div>
     
-    <div class="modal fade" id="batchTaskModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">批量任务</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><textarea id="batch-task-json" class="form-control" rows="10" placeholder="JSON数组..."></textarea></div><div class="modal-footer"><button type="button" class="btn btn-primary" onclick="submitBatchTasks()">提交</button></div></div></div></div>
+    <div class="modal fade" id="batchTaskModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入任务</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="taskImportTabs" role="tablist">
+                        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-task-paste" type="button">粘贴文本</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-task-file" type="button">上传文件</button></li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-task-paste">
+                            <p class="small text-muted mb-2">格式：<code>账号名 [TAB] 收件人 [TAB] 主题 [TAB] 内容 [TAB] 延迟 [TAB] 循环(0/1) [TAB] 时间</code></p>
+                            <textarea id="import-task-txt" class="form-control" rows="10" placeholder="MyGmail&#09;to@test.com&#09;Subject..."></textarea>
+                        </div>
+                        <div class="tab-pane fade" id="tab-task-file">
+                            <div class="mb-3">
+                                <label for="import-task-file-input" class="form-label">选择 .txt 文件</label>
+                                <input class="form-control" type="file" id="import-task-file-input" accept=".txt">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitBatchTasks()">开始导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <div class="modal fade" id="batchAccountImportModal" tabindex="-1">
         <div class="modal-dialog">
