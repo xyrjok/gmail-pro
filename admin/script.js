@@ -994,13 +994,104 @@ function batchDelTasks() {
     const ids = $(".task-check:checked").map(function(){return this.value}).get();
     if(ids.length && confirm("删除选中?")) fetch(API_BASE+'/api/tasks?ids='+ids.join(','), {method:'DELETE',headers:getHeaders()}).then(()=>loadTasks(currentTaskPage));
 }
-function openBatchTaskModal() { new bootstrap.Modal(document.getElementById('batchTaskModal')).show(); }
+function openBatchTaskModal() {
+    $("#import-task-txt").val("");
+    $("#import-task-file-input").val("");
+    // 激活第一个 Tab
+    const tabEl = document.querySelector('#taskImportTabs button[data-bs-target="#tab-task-paste"]');
+    if(tabEl) new bootstrap.Tab(tabEl).show();
+    new bootstrap.Modal(document.getElementById('batchTaskModal')).show();
+}
+
+function exportTasks() {
+    const btn = $(event.target).closest('button');
+    const orgHtml = btn.html();
+    btn.html('<i class="fas fa-spinner fa-spin"></i> 导出中...');
+
+    // 获取大量数据用于导出
+    fetch(`${API_BASE}/api/tasks?limit=10000`, { headers: getHeaders() })
+        .then(r => r.json())
+        .then(res => {
+            const list = res.data || [];
+            if (!list.length) { btn.html(orgHtml); return showToast("暂无任务数据"); }
+
+            const lines = list.map(t => {
+                // 清理换行符，防止破坏 TXT 结构
+                const sub = (t.subject || '').replace(/[\r\n]+/g, ' ');
+                const con = (t.content || '').replace(/[\r\n]+/g, ' ');
+                const next = t.next_run_at ? toLocalISOString(new Date(t.next_run_at)) : ''; // 使用 ISO 格式方便再次导入
+                // 格式: 账号名 [TAB] 收件人 [TAB] 主题 [TAB] 内容 [TAB] 延迟配置 [TAB] 循环(0/1) [TAB] 下次运行时间
+                return `${t.account_name||''}\t${t.to_email||''}\t${sub}\t${con}\t${t.delay_config||''}\t${t.is_loop?1:0}\t${next}`;
+            });
+
+            const txtContent = lines.join('\n');
+            const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
+            const a = document.createElement('a');
+            a.href = dataStr;
+            a.download = "tasks_backup.txt";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            btn.html(orgHtml);
+        })
+        .catch(() => { btn.html(orgHtml); showToast("导出失败"); });
+}
+
 function submitBatchTasks() {
-    try {
-        const json = JSON.parse($("#batch-task-json").val());
-        fetch(API_BASE + '/api/tasks', { method: 'POST', headers: getHeaders(), body: JSON.stringify(json) })
-            .then(() => { bootstrap.Modal.getInstance(document.getElementById('batchTaskModal')).hide(); loadTasks(currentTaskPage); });
-    } catch(e) { alert("JSON错误"); }
+    const activeTab = $("#taskImportTabs .active").attr("data-bs-target");
+    if (activeTab === "#tab-task-paste") {
+        processTaskImport($("#import-task-txt").val());
+    } else {
+        const file = document.getElementById('import-task-file-input').files[0];
+        if (!file) return showToast("请选择文件");
+        const reader = new FileReader();
+        reader.onload = e => processTaskImport(e.target.result);
+        reader.readAsText(file);
+    }
+}
+
+function processTaskImport(content) {
+    if (!content.trim()) return showToast("内容为空");
+
+    // 1. 先获取所有账号信息，用于将导入的"账号名称"转换为"ID"
+    fetch(`${API_BASE}/api/accounts?type=simple`, { headers: getHeaders() })
+        .then(r => r.json())
+        .then(res => {
+            const accounts = res.data || res;
+            if (!accounts.length) return alert("系统内无发件账号，无法导入任务");
+
+            try {
+                const lines = content.split('\n').filter(l => l.trim());
+                const json = lines.map(line => {
+                    const p = line.split('\t'); // 不要 trim split 后的结果，保留空格
+                    const accName = (p[0]||"").trim();
+                    const acc = accounts.find(a => a.name === accName);
+                    
+                    return {
+                        account_id: acc ? acc.id : null, // 如果没匹配到，后端会报错或忽略
+                        to_email: (p[1]||"").trim(),
+                        subject: (p[2]||"").trim(),
+                        content: (p[3]||"").trim(),
+                        delay_config: (p[4]||"").trim(),
+                        is_loop: (p[5]||"").trim() === '1',
+                        base_date: (p[6]||"").trim(),
+                        execution_mode: 'AUTO'
+                    };
+                });
+
+                // 2. 发送到后端
+                fetch(API_BASE + '/api/tasks', { method: 'POST', headers: getHeaders(), body: JSON.stringify(json) })
+                    .then(r => r.json()).then(res => {
+                        if (res.ok) {
+                            bootstrap.Modal.getInstance(document.getElementById('batchTaskModal')).hide();
+                            showToast("批量添加成功");
+                            loadTasks(currentTaskPage);
+                        } else {
+                            alert("添加失败: " + (res.error || "未知错误"));
+                        }
+                    });
+            } catch (e) { alert("解析错误: " + e.message); }
+        });
 }
 
 function sendNow() {
