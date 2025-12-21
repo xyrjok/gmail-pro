@@ -144,6 +144,7 @@ function doLogin() {
         .then(res => {
             if(res.ok) {
                 $("#login-overlay").fadeOut();
+                $("#wrapper").show();
                 loadAccounts();
                 loadAllAccountNames(); 
                 loadGroups(); // [新增] 登录后加载策略组
@@ -1297,6 +1298,7 @@ function toggleAll(type) {
 }
 if (localStorage.getItem("auth_token")) {
     $("#login-overlay").hide(); 
+    $("#wrapper").show();
     loadAccounts();
     loadGroups();
     loadAllAccountNames();
