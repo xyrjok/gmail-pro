@@ -644,22 +644,32 @@ async function handleEmails(req, env) {
 // ============================================================
 // 公开查询接口 (HTML 渲染 + 策略组逻辑)
 // ============================================================
+// ============================================================
+// 公开查询接口 (HTML 渲染 + 策略组逻辑) - 已修改为 Outlook 样式
+// ============================================================
 
 async function handlePublicQuery(code, env, url) {
-    // 1. CSS 样式
-    const cssStyle = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;max-width:800px;margin:20px auto;padding:0 20px;color:#333;background:#f9f9f9}.item{background:#fff;padding:15px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.05);margin-bottom:15px;border-left:4px solid #EA4335}.time{font-size:0.85em;color:#666;margin-bottom:5px}.content{word-break:break-word;line-height:1.6}.msg{text-align:center;color:#666;padding:20px}.error{color:#dc3545;text-align:center}`;
+    // 1. [Outlook 样式] 定义统一 CSS 样式 (简洁风格)
+    const cssStyle = `
+        body { font-size: 16px; font-family: sans-serif; line-height: 1.3; color: #333; background: #fff; }
+        .item, .msg { margin-bottom: 12px;}
+    `;
     
-    const renderPage = (body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>邮件查询</title><style>${cssStyle}</style></head><body>${body}</body></html>`;
+    // 2. [Outlook 样式] 页面渲染函数
+    const renderPage = (content) => `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>邮件查询</title><style>${cssStyle}</style></head><body>${content}</body></html>`;
 
-    const errResp = (msg, status=404) => new Response(renderPage(`<div class="msg error">${msg}</div>`), {status, headers: {'Content-Type': 'text/html;charset=UTF-8'}});
-
-    // 2. 查规则
+    // 3. 查规则
     const rule = await env.XYRJ_GMAIL.prepare("SELECT * FROM access_rules WHERE query_code=?").bind(code).first();
-    if (!rule) return errResp("查询链接无效 (Invalid Link)");
+    
+    // [Outlook 提示语] 链接无效
+    if (!rule) return new Response(renderPage('<div class="msg">查询链接无效 (Link Invalid)</div>'), {status: 404, headers: {"Content-Type": "text/html;charset=UTF-8"}});
 
-    if (rule.valid_until && Date.now() > rule.valid_until) return errResp("链接已过期 (Link Expired)", 403);
+    // [Outlook 提示语] 链接过期
+    if (rule.valid_until && Date.now() > rule.valid_until) {
+        return new Response(renderPage('<div class="msg">链接已过期 (Link Expired)</div>'), {status: 403, headers: {"Content-Type": "text/html;charset=UTF-8"}});
+    }
 
-    // 3. [新增] 策略组覆盖
+    // 策略组覆盖逻辑 (保持 Gmail-Pro 原有逻辑)
     if (rule.group_id) {
         const group = await env.XYRJ_GMAIL.prepare("SELECT * FROM filter_groups WHERE id=?").bind(rule.group_id).first();
         if (group) {
@@ -669,15 +679,17 @@ async function handlePublicQuery(code, env, url) {
         }
     }
 
-    // 4. 查账号 (支持 Email 模糊匹配)
+    // 4. 查账号 (保持 Gmail-Pro 的 status=1 检查，但使用 Outlook 的模糊匹配策略和提示语)
     let acc = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts WHERE name=? AND status=1").bind(rule.name).first();
     if (!acc) {
-        // 如果名字匹配不到，尝试匹配 email 字段
+        // 尝试模糊匹配邮箱
         acc = await env.XYRJ_GMAIL.prepare("SELECT * FROM accounts WHERE email LIKE ? AND status=1").bind(`%${rule.name}%`).first();
     }
-    if (!acc) return errResp("未找到关联账号 (Account Not Found)");
+    
+    // [Outlook 提示语] 账号未找到
+    if (!acc) return new Response(renderPage('<div class="msg">未找到对应的账号配置 (Account Not Found)</div>'), {status: 404, headers: {"Content-Type": "text/html;charset=UTF-8"}});
 
-    // 解析数量限制 "fetch-show"
+    // 解析数量限制
     let fetchNum = 20, showNum = 5;
     if (rule.fetch_limit) {
         const parts = String(rule.fetch_limit).split('-');
@@ -687,7 +699,6 @@ async function handlePublicQuery(code, env, url) {
 
     try {
         // 5. 抓取与过滤
-        // 构建查询参数对象
         const queryParams = {
             sender: rule.match_sender,
             receiver: rule.match_receiver,
@@ -696,33 +707,35 @@ async function handlePublicQuery(code, env, url) {
 
         let emails = await syncEmails(env, acc, fetchNum, queryParams);
 
-        // 6. 二次过滤与美化 (确保“所见即所搜”)
+        // 6. [Outlook 样式] 文本预处理 (确保“所见即所搜”)
         emails.forEach(e => {
-            let content = e.body || "";
-            content = stripHtml(content);
-            e.displayText = content.replace(/\s+/g, ' ').trim();
+            let content = e.body || ""; // Gmail 这里的 body 可能是 snippet 或 html
+            // 采用 Outlook 的清理逻辑
+            content = content.replace(/<a[^>]+href=["'](.*?)["'][^>]*>(.*?)<\/a>/gi, '$2 ($1)');
+            content = content.replace(/<[^>]+>/g, '');
+            e.displayText = content.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
         });
 
-        // 如果是 API 模式，其实已经过滤过了，但为了保险（以及 GAS 模式的需要），这里可以再做一次精确过滤
-        // ... (此处省略二次过滤逻辑，以 API 返回为准)
-
+        // 截取数量
         emails = emails.slice(0, showNum);
 
-        if (emails.length === 0) return new Response(renderPage('<div class="msg">暂无符合条件的邮件</div>'), {headers: {'Content-Type': 'text/html;charset=UTF-8'}});
+        // [Outlook 提示语] 暂无邮件
+        if (emails.length === 0) {
+            return new Response(renderPage('<div class="msg">暂无符合条件的邮件</div>'), {headers: {'Content-Type': 'text/html;charset=UTF-8'}});
+        }
 
-        // 7. 生成 HTML 列表
+        // 7. [Outlook 格式] 生成 HTML 列表: "时间 | 正文"
         const listHtml = emails.map(e => {
             const timeStr = new Date(e.received_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai'});
-            return `<div class="item">
-                <div class="time">${timeStr} | ${e.sender.replace(/<.*?>/g, '')}</div>
-                <div class="content">${e.displayText}</div>
-            </div>`;
+            // 这里去掉了发件人，只保留 时间 | 正文
+            return `<div class="item">${timeStr} | ${e.displayText}</div>`;
         }).join('');
 
         return new Response(renderPage(listHtml), {headers: {'Content-Type': 'text/html;charset=UTF-8'}});
 
     } catch (e) {
-        return errResp(`查询出错: ${e.message}`, 500);
+        // [Outlook 提示语] 报错
+        return new Response(renderPage(`<div class="msg">查询出错: ${e.message}</div>`), {status: 500, headers: {'Content-Type': 'text/html;charset=UTF-8'}});
     }
 }
 
