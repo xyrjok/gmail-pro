@@ -816,10 +816,6 @@ function generateQueryCode() {
     return Math.random().toString(36).substring(2, 12).toUpperCase();
 }
 
-function stripHtml(html) {
-    if (!html) return "";
-    return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
-}
 function getRandFromRange(str) {
     if (!str) return 0;
     if (String(str).includes('-')) {
