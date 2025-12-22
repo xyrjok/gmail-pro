@@ -4,6 +4,7 @@
  * 1. 支持 Gmail API 和 GAS (Apps Script) 双模式
  * 2. 支持 HTML 渲染和策略组 (Filter Groups)
  * 3. 并发优化与模块化结构
+ * 4. [修改版] 增加导入查重过滤功能 (Accounts, Tasks, Rules)
  */
 
 export default {
@@ -43,7 +44,7 @@ export default {
 
       // 5. API 路由分发
       if (path === '/api/login') return jsonResp({ success: true });
-      if (path.startsWith('/api/groups')) return handleGroups(request, env); // [新增]
+      if (path.startsWith('/api/groups')) return handleGroups(request, env);
       if (path.startsWith('/api/accounts')) return handleAccounts(request, env);
       if (path.startsWith('/api/tasks')) return handleTasks(request, env);
       if (path.startsWith('/api/emails')) return handleEmails(request, env);
@@ -297,7 +298,6 @@ async function handleGroups(req, env) {
     const url = new URL(req.url);
 
     if (method === 'GET') {
-        // [添加] 新的分页查询逻辑
         const page = parseInt(url.searchParams.get('page')) || 1;
         const limit = parseInt(url.searchParams.get('limit')) || 30;
         const offset = (page - 1) * limit;
@@ -334,7 +334,6 @@ async function handleRules(req, env) {
     const url = new URL(req.url);
 
     if (method === 'GET') {
-        // [添加] 分页 + 搜索逻辑
         const page = parseInt(url.searchParams.get('page')) || 1;
         const limit = parseInt(url.searchParams.get('limit')) || 30;
         const q = url.searchParams.get('q');
@@ -353,16 +352,34 @@ async function handleRules(req, env) {
         // 保持返回结构一致
         return jsonResp({ data: results, total: total, page: page, total_pages: Math.ceil(total / limit) });
     }
+    
+    // POST: 添加规则 (已修改：支持数组批量导入 + 查重)
     if (method === 'POST') {
         const d = await req.json();
-        const code = d.query_code || generateQueryCode();
-        // [新增] group_id
-        await env.XYRJ_GMAIL.prepare(`
-            INSERT INTO access_rules (name, alias, query_code, fetch_limit, valid_until, match_sender, match_receiver, match_body, group_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(d.name, d.alias, code, d.fetch_limit, d.valid_until, d.match_sender, d.match_receiver, d.match_body, d.group_id || null).run();
-        return jsonResp({ success: true });
+        const items = Array.isArray(d) ? d : [d];
+        const skipped = [];
+        let count = 0;
+
+        for (const item of items) {
+            const code = item.query_code || generateQueryCode();
+            
+            // [新增] 查重逻辑
+            const exists = await env.XYRJ_GMAIL.prepare("SELECT 1 FROM access_rules WHERE query_code=?").bind(code).first();
+            if (exists) {
+                skipped.push(code);
+                continue;
+            }
+
+            await env.XYRJ_GMAIL.prepare(`
+                INSERT INTO access_rules (name, alias, query_code, fetch_limit, valid_until, match_sender, match_receiver, match_body, group_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(item.name, item.alias, code, item.fetch_limit, item.valid_until, item.match_sender, item.match_receiver, item.match_body, item.group_id || null).run();
+            count++;
+        }
+        // 返回导入数量和跳过的列表
+        return jsonResp({ success: true, imported: count, skipped });
     }
+
     if (method === 'PUT') {
         const d = await req.json();
         // [新增] group_id
@@ -424,12 +441,23 @@ async function handleAccounts(req, env) {
         });
     }
     
-    // POST: 批量或单条添加
+    // POST: 批量或单条添加 (已修改：支持查重)
     if (method === 'POST') {
         const d = await req.json();
         const items = Array.isArray(d) ? d : [d];
+        const skipped = [];
+        let count = 0;
         
         for (const item of items) {
+             // [新增] 查重逻辑：如果邮箱已存在则跳过
+             if (item.email) {
+                 const exists = await env.XYRJ_GMAIL.prepare("SELECT 1 FROM accounts WHERE email=?").bind(item.email).first();
+                 if (exists) {
+                     skipped.push(item.email);
+                     continue;
+                 }
+             }
+
              const storedUrl = (item.type === 'API') ? '' : (item.gas_url || item.script_url || '');
              
              // [修复核心] 解析 api_config 字符串为独立字段
@@ -454,8 +482,10 @@ async function handleAccounts(req, env) {
                  csec || null, 
                  rtok || null
              ).run();
+             count++;
         }
-        return jsonResp({ ok: true });
+        // 返回结果
+        return jsonResp({ ok: true, imported: count, skipped });
     }
 
     // PUT: 更新账号
@@ -516,7 +546,7 @@ async function handleTasks(req, env) {
     const method = req.method;
     const url = new URL(req.url);
 
-    // POST: 添加或立即发送
+    // POST: 添加或立即发送 (已修改：支持查重)
     if (method === 'POST') {
         const d = await req.json();
         // 立即发送
@@ -526,18 +556,39 @@ async function handleTasks(req, env) {
             const res = await executeSendEmail(env, acc, d.to_email, d.subject, d.content, d.execution_mode);
             return jsonResp({ ok: res.success, error: res.error });
         }
+        
         // 添加任务 (支持数组)
         const items = Array.isArray(d) ? d : [d];
-        const stmt = env.XYRJ_GMAIL.prepare(`
-            INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-        `);
-        const batch = items.map(t => {
-            const nextRun = t.base_date ? new Date(t.base_date).getTime() : calculateNextRun(Date.now(), t.delay_config);
-            return stmt.bind(t.account_id, t.to_email, t.subject, t.content, t.base_date, t.delay_config, nextRun, t.is_loop, t.execution_mode || 'AUTO');
-        });
-        await env.XYRJ_GMAIL.batch(batch);
-        return jsonResp({ ok: true });
+        const skipped = [];
+        const validItems = [];
+
+        for (const t of items) {
+            // 查重：同账号、收件人、主题、内容且状态为 pending 的视为重复
+            const exists = await env.XYRJ_GMAIL.prepare(
+                "SELECT 1 FROM send_tasks WHERE account_id=? AND to_email=? AND subject=? AND content=? AND status='pending'"
+            ).bind(t.account_id, t.to_email, t.subject, t.content).first();
+
+            if (exists) {
+                skipped.push(`${t.to_email} (${t.subject})`);
+                continue;
+            }
+            validItems.push(t);
+        }
+
+        if (validItems.length > 0) {
+            const stmt = env.XYRJ_GMAIL.prepare(`
+                INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            `);
+            const batch = validItems.map(t => {
+                const nextRun = t.base_date ? new Date(t.base_date).getTime() : calculateNextRun(Date.now(), t.delay_config);
+                return stmt.bind(t.account_id, t.to_email, t.subject, t.content, t.base_date, t.delay_config, nextRun, t.is_loop, t.execution_mode || 'AUTO');
+            });
+            await env.XYRJ_GMAIL.batch(batch);
+        }
+        
+        // 返回结果
+        return jsonResp({ ok: true, imported: validItems.length, skipped });
     }
 
     // PUT: 更新或执行
