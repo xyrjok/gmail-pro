@@ -223,7 +223,8 @@ function renderAccounts(data) {
         let apiFull = '';
         if (acc.client_id) {
             apiText = `ID:${acc.client_id}, Secret:${acc.client_secret}, Token:${acc.refresh_token}`;
-            apiFull = apiText;
+            // [修改] 复制时使用逗号分隔的纯文本，方便导入
+            apiFull = `${acc.client_id},${acc.client_secret||''},${acc.refresh_token||''}`;
         } else if (acc.type.includes('API')) {
             apiText = '无配置';
         }
@@ -321,7 +322,9 @@ function exportAccounts() {
                 if (acc.client_id) apiConf = `${acc.client_id},${acc.client_secret || ''},${acc.refresh_token || ''}`;
                 let gasUrl = '';
                 if (acc.script_url && acc.script_url.startsWith('http')) gasUrl = acc.script_url;
-                return `${acc.name}\t${acc.alias || ''}\t${apiConf}\t${gasUrl}`;
+                
+                // [修改] 补上 email 字段，与导入逻辑的顺序 (名称, 邮箱, 别名, API, GAS) 保持一致
+                return `${acc.name}\t${acc.email || ''}\t${acc.alias || ''}\t${apiConf}\t${gasUrl}`;
             });
             const txtContent = lines.join('\n');
             const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
@@ -376,7 +379,10 @@ function openEditModal(id) {
     $("#acc-email").val(acc.email || ""); // [新增]
     $("#acc-alias").val(acc.alias);
     if (acc.client_id) {
-        $("#acc-api-config").val(`${acc.client_id},${acc.client_secret},${acc.refresh_token}`);
+        // [修复] 防止 null 变成字符串 "null"
+        const sec = acc.client_secret || '';
+        const tok = acc.refresh_token || '';
+        $("#acc-api-config").val(`${acc.client_id},${sec},${tok}`);
     } else {
         $("#acc-api-config").val("");
     }
@@ -836,6 +842,9 @@ function openBatchRuleModal() {
 }
 
 function processRuleImport(content) {
+    if (cachedGroups.length === 0 && !confirm("策略组列表似乎为空（可能未加载完成），导入可能无法正确绑定策略组。是否继续？")) {
+        return;
+    }
     try {
         const lines = content.split('\n').filter(line => line.trim());
         const json = lines.map(line => {
@@ -859,7 +868,14 @@ function processRuleImport(content) {
             .then(r => r.json()).then(res => {
                 if (res.success) {
                     bootstrap.Modal.getInstance(document.getElementById('batchRuleImportModal')).hide();
-                    alert(`成功导入 ${res.count} 条规则`);
+                    
+                    // [修改] 修复变量名并显示跳过的重复规则
+                    let msg = `成功导入: ${res.imported} 条规则`;
+                    if (res.skipped && res.skipped.length > 0) {
+                        msg += `\n\n已跳过 ${res.skipped.length} 条重复(查询码):\n` + res.skipped.join('\n');
+                    }
+                    alert(msg);
+                    
                     loadRules();
                 } else alert("导入失败");
             });
@@ -1085,7 +1101,17 @@ function processTaskImport(content) {
                     .then(r => r.json()).then(res => {
                         if (res.ok) {
                             bootstrap.Modal.getInstance(document.getElementById('batchTaskModal')).hide();
-                            showToast("批量添加成功");
+                            
+                            // [修改] 优化提示，显示跳过任务
+                            let msg = `成功添加: ${res.imported} 个任务`;
+                            if (res.skipped && res.skipped.length > 0) {
+                                // 任务可能很多，只显示前10个
+                                const showList = res.skipped.slice(0, 10).join('\n');
+                                const moreTxt = res.skipped.length > 10 ? `\n...等共 ${res.skipped.length} 个` : '';
+                                msg += `\n\n已跳过重复任务:\n${showList}${moreTxt}`;
+                            }
+                            alert(msg);
+                            
                             loadTasks(currentTaskPage);
                         } else {
                             alert("添加失败: " + (res.error || "未知错误"));
@@ -1281,7 +1307,14 @@ function processImportContent(content) {
             .then(r => r.json()).then(res => {
                 if (res.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('batchAccountImportModal')).hide();
-                    alert(`导入成功: ${res.imported || json.length} 个`);
+                    
+                    // [修改] 优化提示，显示跳过的重复项
+                    let msg = `成功导入: ${res.imported} 个`;
+                    if (res.skipped && res.skipped.length > 0) {
+                        msg += `\n\n已跳过 ${res.skipped.length} 个重复邮箱:\n` + res.skipped.join('\n');
+                    }
+                    alert(msg);
+                    
                     loadAccounts(currentAccountPage); 
                     loadAllAccountNames();
                 } else {
