@@ -10,8 +10,8 @@ export default {
     // 获取当前触发的时间代码
     const cron = event.cron;
 
-    // 1. 如果是保活任务 (每3个月)
-    if (cron === "0 0 1 */3 *") {
+    // 1. 如果是保活任务 (每2个小时)
+    if (cron === "0 */5 * * *") {
         ctx.waitUntil(keepTokensAlive(db));
     } 
     // 2. 否则是常规发信任务 (原逻辑)
@@ -326,34 +326,45 @@ if (String(str).includes('-')) {
 }
 return parseInt(str) || 0;
 }
-// === 新增：保活专用函数 (带1秒延时) ===
+// === 最终完美版：精准轮询 (按时间排序) ===
 async function keepTokensAlive(db) {
   // 延时工具 (1秒)
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   try {
-    // 只查 API 模式的账号 (利用 db 参数)
+    // 1. 【核心修改】找出 "最久没刷新" 的 5 个账号
+    // 排序：last_refresh_time 从小到大 (0 或 老时间 排在最前面)
     const { results } = await db.prepare(
-      "SELECT id, name, client_id, client_secret, refresh_token FROM accounts WHERE type = 'API' AND status = 1"
+      "SELECT id, name, client_id, client_secret, refresh_token FROM accounts WHERE type = 'API' AND status = 1 ORDER BY last_refresh_time ASC LIMIT 5"
     ).all();
 
     if (!results || results.length === 0) return;
 
-    console.log(`🛡️ 开始保活巡检，共 ${results.length} 个账号`);
+    console.log(`🛡️ [精准轮询] 本次处理最久未刷新的 ${results.length} 个账号`);
 
     for (const [index, acc] of results.entries()) {
       try {
-        // 复用文件里已有的 refreshGoogleToken 函数
+        // 执行刷新
         await refreshGoogleToken(acc.client_id, acc.client_secret, acc.refresh_token);
-        console.log(`✅ 账号 ${acc.name} 刷新完成`);
+        
+        // 2. 【核心修改】标记该账号为 "刚刚已刷新"
+        // 这样下次排序它就会跑到最后面去了
+        await db.prepare("UPDATE accounts SET last_refresh_time = ? WHERE id = ?")
+          .bind(Date.now(), acc.id)
+          .run();
 
-        // 拟人化：每处理一个暂停 1 秒 (最后一个除外)
+        console.log(`✅ 账号 ${acc.name} 刷新完成 (时间已更新)`);
+
+        // 拟人化：暂停 1 秒
         if (index < results.length - 1) await delay(1000);
+
       } catch (err) {
-        console.error(`❌ 账号 ${acc.name} 保活失败:`, err);
+        console.error(`❌ 账号 ${acc.name} 失败:`, err);
+        // 即使失败，也可以选择更新时间，避免它卡死在这里，一直重试它
+        // await db.prepare("UPDATE accounts SET last_refresh_time = ? WHERE id = ?").bind(Date.now(), acc.id).run();
       }
     }
   } catch (e) {
-    console.error("保活任务全局错误:", e);
+    console.error("保活任务错误:", e);
   }
 }
