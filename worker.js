@@ -7,9 +7,17 @@ export default {
   async scheduled(event, env, ctx) {
     // 绑定您的 D1 数据库变量
     const db = env.XYRJ_GMAIL; 
-    
-    // 使用 waitUntil 确保代码执行完整
-    ctx.waitUntil(handleCronJob(db));
+    // 获取当前触发的时间代码
+    const cron = event.cron;
+
+    // 1. 如果是保活任务 (每3个月)
+    if (cron === "0 0 1 */3 *") {
+        ctx.waitUntil(keepTokensAlive(db));
+    } 
+    // 2. 否则是常规发信任务 (原逻辑)
+    else {
+        ctx.waitUntil(handleCronJob(db));
+    }
   }
 };
 
@@ -317,4 +325,35 @@ if (String(str).includes('-')) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 return parseInt(str) || 0;
+}
+// === 新增：保活专用函数 (带1秒延时) ===
+async function keepTokensAlive(db) {
+  // 延时工具 (1秒)
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  try {
+    // 只查 API 模式的账号 (利用 db 参数)
+    const { results } = await db.prepare(
+      "SELECT id, name, client_id, client_secret, refresh_token FROM accounts WHERE type = 'API' AND status = 1"
+    ).all();
+
+    if (!results || results.length === 0) return;
+
+    console.log(`🛡️ 开始保活巡检，共 ${results.length} 个账号`);
+
+    for (const [index, acc] of results.entries()) {
+      try {
+        // 复用文件里已有的 refreshGoogleToken 函数
+        await refreshGoogleToken(acc.client_id, acc.client_secret, acc.refresh_token);
+        console.log(`✅ 账号 ${acc.name} 刷新完成`);
+
+        // 拟人化：每处理一个暂停 1 秒 (最后一个除外)
+        if (index < results.length - 1) await delay(1000);
+      } catch (err) {
+        console.error(`❌ 账号 ${acc.name} 保活失败:`, err);
+      }
+    }
+  } catch (e) {
+    console.error("保活任务全局错误:", e);
+  }
 }
