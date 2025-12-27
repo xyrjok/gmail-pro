@@ -15,18 +15,20 @@ CREATE TABLE IF NOT EXISTS access_rules (
 
 -- 2. 账号表 (新增 email 字段)
 CREATE TABLE IF NOT EXISTS accounts (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL,
-    email           TEXT,
-    alias           TEXT,
-    type            TEXT CHECK (type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
-    script_url      TEXT,
-    config_json     TEXT,
-    status          INTEGER DEFAULT 1,
-    client_id       TEXT,
-    client_secret   TEXT,
-    refresh_token   TEXT
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                TEXT NOT NULL,
+    email               TEXT,
+    alias               TEXT,
+    type                TEXT CHECK (type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
+    script_url          TEXT,
+    config_json         TEXT,
+    status              INTEGER DEFAULT 1,
+    client_id           TEXT,
+    client_secret       TEXT,
+    refresh_token       TEXT,
+    last_refresh_time   INTEGER DEFAULT 0
 );
+
 
 -- 3. 发送任务表 (保持不变)
 CREATE TABLE IF NOT EXISTS send_tasks (
