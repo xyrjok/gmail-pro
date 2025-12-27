@@ -141,57 +141,47 @@ async function processSingleTask(db, task, apiTokenCache) {
 // 辅助工具函数
 // ----------------------------------------------------------------
 
-// 1. 更新任务状态 (处理循环逻辑)
+// 1. 更新任务状态 (修复版：移除不存在的 updated_at 字段)
 async function updateTaskStatus(db, task, isSuccess, errorMsg = '') {
-  const now = Date.now();
+const now = Date.now();
 
-  if (isSuccess) {
-    if (task.is_loop === 1) {
-      // === 循环任务 ===
-      // 解析 delay_config。假设您存的是 "60" (分钟)，或者 JSON
-      // 这里做一个简单的兼容处理，默认按分钟计算
-      let delayMinutes = 1440; // 默认 24小时
-      
-      if (task.delay_config) {
-        const parsed = parseInt(task.delay_config);
-        if (!isNaN(parsed) && parsed > 0) {
-          delayMinutes = parsed;
-        }
-      }
-      
-      const nextTime = now + (delayMinutes * 60 * 1000);
+if (isSuccess) {
+  if (task.is_loop === 1) {
+    // === 循环任务 ===
+    const nextTime = calculateNextRun(now, task.delay_config);
 
-      // 更新 next_run_at，保持 status 为 pending (或者您可以有专门的 looping 状态)
-      // 注意：这里我们只更新时间，status 依然保持 pending 以便下次被捞起
-      // 或者您可以重置 status = 'pending' 确保万无一失
-      await db.prepare(`
-        UPDATE send_tasks 
-        SET next_run_at = ?, success_count = success_count + 1, updated_at = ?, status = 'pending'
-        WHERE id = ?
-      `).bind(nextTime, now, task.id).run();
-
-      console.log(`🔄 循环任务 ${task.id} 已推迟 ${delayMinutes} 分钟`);
-
-    } else {
-      // === 单次任务 ===
-      await db.prepare(`
-        UPDATE send_tasks 
-        SET status = 'completed', success_count = success_count + 1, updated_at = ? 
-        WHERE id = ?
-      `).bind(now, task.id).run();
-      
-      console.log(`✅ 单次任务 ${task.id} 完成`);
-    }
-  } else {
-    // === 失败 ===
-    // 仅增加失败计数，不修改下次运行时间，等待下次 Cron 重试
-    // 可选：如果 fail_count > 5，则标记为 'failed' 并不再重试
+    // [修正] 删除了 updated_at 字段
     await db.prepare(`
-        UPDATE send_tasks 
-        SET fail_count = fail_count + 1 
-        WHERE id = ?
+      UPDATE send_tasks 
+      SET next_run_at = ?, success_count = success_count + 1, status = 'pending'
+      WHERE id = ?
+    `).bind(nextTime, task.id).run();
+
+    console.log(`🔄 循环任务 ${task.id} 成功，下次运行: ${new Date(nextTime).toLocaleString()}`);
+
+  } else {
+    // === 单次任务 ===
+    // [修正] 删除了 updated_at 字段
+    await db.prepare(`
+      UPDATE send_tasks 
+      SET status = 'success', success_count = success_count + 1
+      WHERE id = ?
     `).bind(task.id).run();
+    
+    console.log(`✅ 单次任务 ${task.id} 完成`);
   }
+} else {
+  // === 失败 ===
+  const retryTime = now + 5 * 60 * 1000; 
+  
+  // 失败逻辑里本来就没加 updated_at，所以这里不用改，但为了保险还是贴完整
+  await db.prepare(`
+      UPDATE send_tasks 
+      SET fail_count = fail_count + 1, next_run_at = ?
+      WHERE id = ?
+  `).bind(retryTime, task.id).run();
+  console.log(`⚠️ 任务 ${task.id} 失败，已推迟 5 分钟重试`);
+}
 }
 
 // 2. GAS 发送实现
@@ -276,4 +266,55 @@ async function refreshGoogleToken(clientId, clientSecret, refreshToken) {
     console.error("刷新 Token 网络异常:", e);
     return null; 
   }
+}
+// ==========================================
+// [新增] 时间计算辅助函数 (移植自 _worker.js)
+// ==========================================
+
+function calculateNextRun(baseTimeMs, configStr) {
+// 默认推迟 1 天
+if (!configStr) return baseTimeMs + 86400000; 
+
+let addMs = 0;
+
+// 格式 1: "d|h|m|s" (例如 0|0|10|0 表示10分钟)
+if (configStr.includes('|')) {
+    const parts = configStr.split('|');
+    const d = getRandFromRange(parts[0]);
+    const h = getRandFromRange(parts[1]);
+    const m = getRandFromRange(parts[2]);
+    const s = getRandFromRange(parts[3]);
+    addMs += d * 24 * 60 * 60 * 1000 + h * 60 * 60 * 1000 + m * 60 * 1000 + s * 1000;
+} 
+// 格式 2: "val,unit" (例如 "10,minute")
+else if (configStr.includes(',')) {
+    const parts = configStr.split(',');
+    const val = getRandFromRange(parts[0]);
+    const unit = parts[1];
+    let multiplier = 24 * 60 * 60 * 1000; // 默认为天
+    if (unit === 'minute') multiplier = 60 * 1000;
+    if (unit === 'hour') multiplier = 60 * 60 * 1000;
+    addMs = val * multiplier;
+} 
+// 格式 3: 纯数字 (例如 "1" 表示 1天)
+else {
+    addMs = getRandFromRange(configStr) * 86400000;
+}
+
+// 最小间隔 1 分钟，防止死循环
+if (addMs <= 0) addMs = 60000;
+
+return baseTimeMs + addMs;
+}
+
+function getRandFromRange(str) {
+if (!str) return 0;
+// 支持 "1-3" 这种随机范围
+if (String(str).includes('-')) {
+    const parts = str.split('-');
+    const min = parseInt(parts[0]) || 0;
+    const max = parseInt(parts[1]) || 0;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+return parseInt(str) || 0;
 }
