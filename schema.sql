@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS access_rules (
     match_sender    TEXT,
     match_receiver  TEXT,
     match_body      TEXT,
-    group_id        INTEGER, -- [新增] 关联策略组ID
+    group_id        INTEGER,
     created_at      INTEGER DEFAULT (strftime('%s', 'now'))
 );
 
@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS access_rules (
 CREATE TABLE IF NOT EXISTS accounts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL,
-    email           TEXT,    -- [新增] 邮箱地址，用于模糊匹配
+    email           TEXT,
     alias           TEXT,
-    type            TEXT CHECK(type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
+    type            TEXT CHECK (type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
     script_url      TEXT,
     config_json     TEXT,
     status          INTEGER DEFAULT 1,
@@ -31,19 +31,19 @@ CREATE TABLE IF NOT EXISTS accounts (
 -- 3. 发送任务表 (保持不变)
 CREATE TABLE IF NOT EXISTS send_tasks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id      INTEGER,
+    account_id      INTEGER NOT NULL,
     to_email        TEXT NOT NULL,
+    subject         TEXT,
     content         TEXT,
     schedule_type   TEXT,
     base_date       DATETIME,
     delay_config    TEXT,
     next_run_at     INTEGER,
-    is_loop         INTEGER DEFAULT 0,
-    status          TEXT DEFAULT 'pending',
-    execution_mode  TEXT DEFAULT 'AUTO',
-    subject         TEXT,
-    success_count   INTEGER DEFAULT 0,
-    fail_count      INTEGER DEFAULT 0
+    is_loop         INTEGER DEFAULT 0 CHECK(is_loop IN (0, 1)),
+    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'success', 'failed')),
+    execution_mode  TEXT DEFAULT 'AUTO' CHECK(execution_mode IN ('AUTO', 'MANUAL')),
+    success_count   INTEGER DEFAULT 0 CHECK(success_count >= 0),
+    fail_count      INTEGER DEFAULT 0 CHECK(fail_count >= 0)
 );
 
 -- 4. [新增] 策略组表 (用于批量管理过滤规则)
