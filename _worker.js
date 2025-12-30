@@ -62,16 +62,22 @@ export default {
 
 async function executeSendEmail(env, account, to, subject, content, mode) {
     try {
-        let useMode = mode;
-        if (!useMode || useMode === 'AUTO') {
-            useMode = account.refresh_token ? 'API' : 'GAS';
-        }
-
-        if (useMode === 'API') {
+        if (mode === 'API') {
+            if (!account.refresh_token) throw new Error("该账号缺少 API (Refresh Token) 配置");
             return await sendViaAPI(env, account, to, subject, content);
-        } else {
+        }
+        if (mode === 'GAS') {
+            if (!account.script_url) throw new Error("该账号缺少 GAS URL 配置");
             return await sendViaGAS(account, to, subject, content);
         }
+        if (account.refresh_token) {
+             return await sendViaAPI(env, account, to, subject, content);
+        } else if (account.script_url) {
+             return await sendViaGAS(account, to, subject, content);
+        }
+        
+        throw new Error("该账号未配置有效的发送方式 (API 或 GAS)");
+
     } catch (e) {
         return { success: false, error: e.message };
     }
