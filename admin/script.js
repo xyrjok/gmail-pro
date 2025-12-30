@@ -1129,7 +1129,8 @@ function sendNow() {
     	to_email: $("#send-to").val(), 
     	subject: $("#send-subject").val() || "Remind",
         content: $("#send-content").val() || ("Reminder of current time: " + new Date().toUTCString()),
-    	immediate: true, execution_mode: 'AUTO'
+    	immediate: true, 
+        execution_mode: $("#pref-api").is(":checked") ? 'API' : ($("#pref-gas").is(":checked") ? 'GAS' : 'AUTO')
     };
     fetch(API_BASE + '/api/tasks', { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) }).then(r=>r.json()).then(res=>{
         showToast(res.ok ? "发送成功" : "失败: "+res.error);
