@@ -992,6 +992,14 @@ function editTask(id) {
         $("#delay-d").val(p[0]); $("#delay-h").val(p[1]); $("#delay-m").val(p[2]); $("#delay-s").val(p[3]);
     }
     $("#loop-switch").prop("checked", !!task.is_loop);
+    if (task.execution_mode === 'API') {
+        $("#pref-api").prop("checked", true);
+    } else if (task.execution_mode === 'GAS') {
+        $("#pref-gas").prop("checked", true);
+    } else {
+        $("#pref-api").prop("checked", false);
+        $("#pref-gas").prop("checked", false);
+    }
     $("#task-card-title").text("编辑任务 " + id);
     $("#btn-save-task").html('更新任务'); $("#btn-cancel-edit").removeClass("d-none");
 }
@@ -1000,6 +1008,8 @@ function cancelEditTask() {
     $("#edit-task-id").val(""); $("#task-card-title").text("创建任务");
     $("#btn-save-task").html('添加任务'); $("#btn-cancel-edit").addClass("d-none");
     $("#send-to,#send-subject,#send-content,#date-a,#delay-d,#delay-h,#delay-m,#delay-s").val("");
+    $("#pref-api").prop("checked", false);
+    $("#pref-gas").prop("checked", false);
 }
 
 function manualRun(id) {
